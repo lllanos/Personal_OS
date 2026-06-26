@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v0.1.0 Seed.
-
-Creates the first calm Notion prototype:
-- ◯ PersonalOS
-- 🍃 Refugio
-- 👤 Personas
-- 🎯 Misiones
-- 🌱 Hábitos
-"""
+"""PersonalOS Notion Installer v0.1.0 Seed."""
 
 from __future__ import annotations
 
@@ -21,11 +13,9 @@ from notion_client import Client
 from rich.console import Console
 from rich.panel import Panel
 
+from components import refuge_components, rt
+
 console = Console()
-
-
-def rt(text: str) -> list[dict[str, Any]]:
-    return [{"type": "text", "text": {"content": text}}]
 
 
 def title_prop(text: str) -> dict[str, Any]:
@@ -86,11 +76,7 @@ class PersonalOSInstaller:
         )
 
     def create_db_item(self, database_id: str, properties: dict[str, Any], children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        return self.notion.pages.create(
-            parent={"database_id": database_id},
-            properties=properties,
-            children=children or [],
-        )
+        return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
 
     def run(self) -> None:
         console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.0 Seed"))
@@ -226,38 +212,8 @@ class PersonalOSInstaller:
             )
 
     def create_refuge(self, root_id: str, missions_db_id: str, habits_db_id: str, people_db_id: str) -> dict[str, Any]:
-        console.print("🍃 Creando Refugio...")
-        return self.create_page(
-            root_id,
-            "🍃 Refugio",
-            "🍃",
-            [
-                {"object": "block", "type": "heading_1", "heading_1": {"rich_text": rt("◯ PersonalOS")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("🌅 Buenos días.")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Hoy no hace falta resolver todo. Solo caminar el siguiente paso.")}},
-                {"object": "block", "type": "divider", "divider": {}},
-                {"object": "block", "type": "heading_2", "heading_2": {"rich_text": rt("🍃 Siguiente paso")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Abrir Classroom")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("⏱ 3 minutos")}},
-                {"object": "block", "type": "callout", "callout": {"icon": {"type": "emoji", "emoji": "▶️"}, "rich_text": rt("Vamos")}},
-                {"object": "block", "type": "divider", "divider": {}},
-                {"object": "block", "type": "heading_2", "heading_2": {"rich_text": rt("⚖ Balance")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Sereno")}},
-                {"object": "block", "type": "divider", "divider": {}},
-                {"object": "block", "type": "heading_2", "heading_2": {"rich_text": rt("⏭ Después")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Leer la consigna")}},
-                {"object": "block", "type": "divider", "divider": {}},
-                {"object": "block", "type": "heading_2", "heading_2": {"rich_text": rt("🌱 Camino")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("🪨  🪨  ○  ○  ○")}},
-                {"object": "block", "type": "divider", "divider": {}},
-                {"object": "block", "type": "heading_2", "heading_2": {"rich_text": rt("🌙 Cierre")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Cuando termines, dejamos preparado mañana.")}},
-                {"object": "block", "type": "divider", "divider": {}},
-                {"object": "block", "type": "link_to_page", "link_to_page": {"type": "database_id", "database_id": missions_db_id}},
-                {"object": "block", "type": "link_to_page", "link_to_page": {"type": "database_id", "database_id": habits_db_id}},
-                {"object": "block", "type": "link_to_page", "link_to_page": {"type": "database_id", "database_id": people_db_id}},
-            ],
-        )
+        console.print("🍃 Creando Refugio desde componentes...")
+        return self.create_page(root_id, "🍃 Refugio", "🍃", refuge_components(missions_db_id, habits_db_id, people_db_id))
 
 
 def main() -> None:
