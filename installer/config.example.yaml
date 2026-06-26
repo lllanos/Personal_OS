@@ -1,0 +1,23 @@
+notion:
+  token: "ntn_REPLACE_WITH_ROTATED_TOKEN"
+  parent_page_id: "38bd46f8cef78097b8fad9b290a97c21"
+
+personalos:
+  title: "◯ PersonalOS"
+  theme: "zen"
+  season: "Otoño"
+  primary_person: "Hija"
+
+people:
+  - name: "👧 Hija"
+    role: "Hija"
+  - name: "👦 Hijo Mayor"
+    role: "Hijo Mayor"
+  - name: "👦 Hijo Menor"
+    role: "Hijo Menor"
+  - name: "👩 Madre"
+    role: "Madre"
+  - name: "👨 Luis"
+    role: "Luis"
+  - name: "🏡 Familia"
+    role: "Familia"
