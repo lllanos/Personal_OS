@@ -18,15 +18,34 @@ PersonalOS does not try to maximize productivity. It helps people recover clarit
 - No pressure, no guilt, no aggressive urgency.
 - The user returns to a refuge, not a dashboard.
 - The system helps reduce mental load.
+- Rituals guide transitions instead of forcing task management.
 
 ## Current milestone
 
 `v0.1.0 Seed` creates the first Notion-based PersonalOS structure:
 
 - 🍃 Refugio
+- 🌅 Ritual del Amanecer
+- 🎯 Ritual del Foco
+- ☕ Ritual de Pausa
+- 🌙 Ritual del Cierre
 - 👤 Personas
 - 🎯 Misiones
 - 🌱 Hábitos
+
+## Quick start
+
+```bash
+cd ~/projects
+git clone https://github.com/lllanos/Personal_OS.git
+cd Personal_OS
+
+export NOTION_TOKEN="ntn_YOUR_ROTATED_TOKEN"
+export NOTION_PARENT_PAGE_ID="38bd46f8cef78097b8fad9b290a97c21"
+
+bash dry_run.sh
+bash run_installer.sh
+```
 
 ## Repository structure
 
