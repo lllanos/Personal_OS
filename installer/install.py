@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v0.1.1 Seed.
+"""PersonalOS Notion Installer v0.1.2 Seed.
 
 This installer intentionally keeps Notion payloads conservative.
 Notion accepts only a restricted subset of emojis for page/database icons, so
@@ -31,8 +31,6 @@ from components import (
 
 console = Console()
 
-# Notion-safe icon registry.
-# Avoid symbolic glyphs such as "◯" as page/database icons; Notion rejects them.
 ICONS: dict[str, str] = {
     "root": "🌱",
     "refuge": "🌱",
@@ -45,6 +43,15 @@ ICONS: dict[str, str] = {
     "closing": "🌙",
     "fallback": "🌱",
 }
+
+DEFAULT_PEOPLE: list[dict[str, str]] = [
+    {"name": "👧 Hija", "role": "Hija"},
+    {"name": "👦 Hijo Mayor", "role": "Hijo Mayor"},
+    {"name": "👦 Hijo Menor", "role": "Hijo Menor"},
+    {"name": "👩 Madre", "role": "Madre"},
+    {"name": "👨 Luis", "role": "Luis"},
+    {"name": "🏡 Familia", "role": "Familia"},
+]
 
 PAGE_ID_RE = re.compile(
     r"([a-fA-F0-9]{32}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})"
@@ -68,7 +75,6 @@ def safe_icon(icon_key: str) -> str:
 
 
 def normalize_page_id(value: str) -> str:
-    """Accept a plain Notion page id or a full Notion URL and return a page id."""
     match = PAGE_ID_RE.search(value or "")
     if not match:
         return value
@@ -82,7 +88,7 @@ def load_config() -> dict[str, Any]:
     if not config_path.exists():
         console.print("[red]No config.yaml or config.example.yaml found.[/red]")
         sys.exit(1)
-    return yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
 
 def resolve_settings(config: dict[str, Any]) -> tuple[str, str]:
@@ -95,6 +101,27 @@ def resolve_settings(config: dict[str, Any]) -> tuple[str, str]:
         console.print("[red]Missing NOTION_PARENT_PAGE_ID. Export it or set it in config.yaml.[/red]")
         sys.exit(1)
     return token, normalize_page_id(parent_page_id)
+
+
+def configured_people(config: dict[str, Any]) -> list[dict[str, str]]:
+    people = config.get("people")
+    if not isinstance(people, list) or not people:
+        console.print("[yellow]⚠ No people found in config.yaml. Using default PersonalOS people.[/yellow]")
+        return DEFAULT_PEOPLE
+
+    valid_people: list[dict[str, str]] = []
+    for item in people:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        role = str(item.get("role", "")).strip()
+        if name and role:
+            valid_people.append({"name": name, "role": role})
+
+    if not valid_people:
+        console.print("[yellow]⚠ Config people are invalid. Using default PersonalOS people.[/yellow]")
+        return DEFAULT_PEOPLE
+    return valid_people
 
 
 class PersonalOSInstaller:
@@ -136,12 +163,13 @@ class PersonalOSInstaller:
         return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
 
     def run(self) -> None:
-        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.1 Seed"))
+        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.2 Seed"))
         root = self.create_root()
         people_db = self.create_people_db(root["id"])
         missions_db = self.create_missions_db(root["id"], people_db["id"])
         habits_db = self.create_habits_db(root["id"], people_db["id"])
         self.seed_people(people_db["id"])
+        self.ensure_people_available(people_db["id"])
         self.seed_missions(missions_db["id"])
         self.seed_habits(habits_db["id"])
         refuge = self.create_refuge(root["id"], missions_db["id"], habits_db["id"], people_db["id"])
@@ -220,7 +248,7 @@ class PersonalOSInstaller:
     def seed_people(self, people_db_id: str) -> None:
         season = self.config.get("personalos", {}).get("season", "Otoño")
         theme = self.config.get("personalos", {}).get("theme", "zen").capitalize()
-        for person in self.config.get("people", []):
+        for person in configured_people(self.config):
             page = self.create_db_item(
                 people_db_id,
                 {
@@ -233,9 +261,32 @@ class PersonalOSInstaller:
             )
             self.people_ids[person["role"]] = page["id"]
 
-    def seed_missions(self, missions_db_id: str) -> None:
+    def ensure_people_available(self, people_db_id: str) -> None:
+        if self.people_ids:
+            return
+        console.print("[yellow]⚠ No people were created. Creating fallback person.[/yellow]")
+        page = self.create_db_item(
+            people_db_id,
+            {
+                "Nombre": title_prop("👧 Hija"),
+                "Rol": {"select": {"name": "Hija"}},
+                "Activo": {"checkbox": True},
+                "Tema": {"select": {"name": "Zen"}},
+                "Estación": {"select": {"name": "Otoño"}},
+            },
+        )
+        self.people_ids["Hija"] = page["id"]
+
+    def primary_person_id(self) -> str:
         primary_role = self.config.get("personalos", {}).get("primary_person", "Hija")
-        person_id = self.people_ids.get(primary_role) or next(iter(self.people_ids.values()))
+        if primary_role in self.people_ids:
+            return self.people_ids[primary_role]
+        if "Hija" in self.people_ids:
+            return self.people_ids["Hija"]
+        return next(iter(self.people_ids.values()))
+
+    def seed_missions(self, missions_db_id: str) -> None:
+        person_id = self.primary_person_id()
         seeds = [
             ("Abrir Classroom", "En camino", "Amanecer", "Educación", 3, "Sereno", "Abrir Classroom.", "Leer la consigna."),
             ("Leer la consigna", "Pendiente", "Foco", "Educación", 5, "Sereno", "Leer solo la consigna, sin resolver todavía.", "Subrayar qué hay que entregar."),
@@ -257,8 +308,7 @@ class PersonalOSInstaller:
             )
 
     def seed_habits(self, habits_db_id: str) -> None:
-        primary_role = self.config.get("personalos", {}).get("primary_person", "Hija")
-        person_id = self.people_ids.get(primary_role) or next(iter(self.people_ids.values()))
+        person_id = self.primary_person_id()
         for habit in ["💧 Tomar agua", "🎒 Preparar mochila", "🌙 Preparar descanso"]:
             self.create_db_item(
                 habits_db_id,
