@@ -32,6 +32,10 @@ def main() -> int:
     console.print("\n[bold]Estructura a crear[/bold]")
     console.print("◯ PersonalOS")
     console.print("├── 🍃 Refugio")
+    console.print("├── 🌅 Ritual del Amanecer")
+    console.print("├── 🎯 Ritual del Foco")
+    console.print("├── ☕ Ritual de Pausa")
+    console.print("├── 🌙 Ritual del Cierre")
     console.print("├── 👤 Personas")
     console.print("├── 🎯 Misiones")
     console.print("└── 🌱 Hábitos")
@@ -66,6 +70,15 @@ def main() -> int:
     habits.add_row("🎒 Preparar mochila", "Diario")
     habits.add_row("🌙 Preparar descanso", "Diario")
     console.print(habits)
+
+    rituals = Table(title="Rituales P1")
+    rituals.add_column("Ritual")
+    rituals.add_column("Propósito")
+    rituals.add_row("🌅 Ritual del Amanecer", "Volver al cuerpo y elegir el primer paso")
+    rituals.add_row("🎯 Ritual del Foco", "Reducir ruido y sostener una sola misión")
+    rituals.add_row("☕ Ritual de Pausa", "Recuperar balance sin culpa")
+    rituals.add_row("🌙 Ritual del Cierre", "Preparar mañana y cerrar el día")
+    console.print(rituals)
 
     console.print("\n[green]✓ Dry-run completo. Si esto se ve correcto, ejecutá bash run_installer.sh.[/green]")
     return 0
