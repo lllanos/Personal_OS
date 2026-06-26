@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v0.1.2 Seed.
+"""PersonalOS Notion Installer v0.1.3 Seed.
 
 This installer intentionally keeps Notion payloads conservative.
 Notion accepts only a restricted subset of emojis for page/database icons, so
 all icons sent to the API pass through a small safe registry.
+
+Titles are intentionally clean: visual symbols live in Notion icons, not in page titles.
 """
 
 from __future__ import annotations
@@ -45,12 +47,12 @@ ICONS: dict[str, str] = {
 }
 
 DEFAULT_PEOPLE: list[dict[str, str]] = [
-    {"name": "👧 Hija", "role": "Hija"},
-    {"name": "👦 Hijo Mayor", "role": "Hijo Mayor"},
-    {"name": "👦 Hijo Menor", "role": "Hijo Menor"},
-    {"name": "👩 Madre", "role": "Madre"},
-    {"name": "👨 Luis", "role": "Luis"},
-    {"name": "🏡 Familia", "role": "Familia"},
+    {"name": "Hija", "role": "Hija"},
+    {"name": "Hijo Mayor", "role": "Hijo Mayor"},
+    {"name": "Hijo Menor", "role": "Hijo Menor"},
+    {"name": "Madre", "role": "Madre"},
+    {"name": "Luis", "role": "Luis"},
+    {"name": "Familia", "role": "Familia"},
 ]
 
 PAGE_ID_RE = re.compile(
@@ -79,6 +81,23 @@ def normalize_page_id(value: str) -> str:
     if not match:
         return value
     return match.group(1).replace("-", "")
+
+
+def clean_title(value: str) -> str:
+    """Remove known duplicated visual prefixes from titles.
+
+    Notion already renders page/database icons, so page titles should remain text-only.
+    """
+    prefixes = ["◯ ", "👤 ", "🎯 ", "🌱 ", "🍃 ", "🌅 ", "☕ ", "🌙 ", "👧 ", "👦 ", "👩 ", "👨 ", "🏡 "]
+    title = value.strip()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            if title.startswith(prefix):
+                title = title[len(prefix):].strip()
+                changed = True
+    return title
 
 
 def load_config() -> dict[str, Any]:
@@ -113,7 +132,7 @@ def configured_people(config: dict[str, Any]) -> list[dict[str, str]]:
     for item in people:
         if not isinstance(item, dict):
             continue
-        name = str(item.get("name", "")).strip()
+        name = clean_title(str(item.get("name", "")).strip())
         role = str(item.get("role", "")).strip()
         if name and role:
             valid_people.append({"name": name, "role": role})
@@ -136,7 +155,7 @@ class PersonalOSInstaller:
             return self.notion.pages.create(
                 parent={"page_id": parent_id},
                 icon={"type": "emoji", "emoji": safe_icon(icon_key)},
-                properties={"title": title_prop(name)},
+                properties={"title": title_prop(clean_title(name))},
                 children=children or [],
             )
         except APIResponseError as exc:
@@ -150,7 +169,7 @@ class PersonalOSInstaller:
             return self.notion.databases.create(
                 parent={"page_id": parent_id},
                 icon={"type": "emoji", "emoji": safe_icon(icon_key)},
-                title=rt(name),
+                title=rt(clean_title(name)),
                 properties=properties,
             )
         except APIResponseError as exc:
@@ -163,7 +182,7 @@ class PersonalOSInstaller:
         return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
 
     def run(self) -> None:
-        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.2 Seed"))
+        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.3 Seed"))
         root = self.create_root()
         people_db = self.create_people_db(root["id"])
         missions_db = self.create_missions_db(root["id"], people_db["id"])
@@ -187,7 +206,7 @@ class PersonalOSInstaller:
         console.print("🍃 Creando raíz PersonalOS...")
         return self.create_page(
             self.parent_page_id,
-            self.config.get("personalos", {}).get("title", "◯ PersonalOS"),
+            self.config.get("personalos", {}).get("title", "PersonalOS"),
             "root",
             [
                 {"object": "block", "type": "heading_1", "heading_1": {"rich_text": rt("◯ PersonalOS")}},
@@ -200,7 +219,7 @@ class PersonalOSInstaller:
         console.print("👤 Creando Personas...")
         return self.create_database(
             root_id,
-            "👤 Personas",
+            "Personas",
             "people",
             {
                 "Nombre": {"title": {}},
@@ -215,7 +234,7 @@ class PersonalOSInstaller:
         console.print("🪨 Preparando el Camino...")
         return self.create_database(
             root_id,
-            "🎯 Misiones",
+            "Misiones",
             "missions",
             {
                 "Misión": {"title": {}},
@@ -234,7 +253,7 @@ class PersonalOSInstaller:
         console.print("🌱 Plantando hábitos...")
         return self.create_database(
             root_id,
-            "🌱 Hábitos",
+            "Hábitos",
             "habits",
             {
                 "Hábito": {"title": {}},
@@ -252,7 +271,7 @@ class PersonalOSInstaller:
             page = self.create_db_item(
                 people_db_id,
                 {
-                    "Nombre": title_prop(person["name"]),
+                    "Nombre": title_prop(clean_title(person["name"])),
                     "Rol": {"select": {"name": person["role"]}},
                     "Activo": {"checkbox": True},
                     "Tema": {"select": {"name": theme}},
@@ -268,7 +287,7 @@ class PersonalOSInstaller:
         page = self.create_db_item(
             people_db_id,
             {
-                "Nombre": title_prop("👧 Hija"),
+                "Nombre": title_prop("Hija"),
                 "Rol": {"select": {"name": "Hija"}},
                 "Activo": {"checkbox": True},
                 "Tema": {"select": {"name": "Zen"}},
@@ -309,7 +328,7 @@ class PersonalOSInstaller:
 
     def seed_habits(self, habits_db_id: str) -> None:
         person_id = self.primary_person_id()
-        for habit in ["💧 Tomar agua", "🎒 Preparar mochila", "🌙 Preparar descanso"]:
+        for habit in ["Tomar agua", "Preparar mochila", "Preparar descanso"]:
             self.create_db_item(
                 habits_db_id,
                 {
@@ -323,15 +342,15 @@ class PersonalOSInstaller:
 
     def create_refuge(self, root_id: str, missions_db_id: str, habits_db_id: str, people_db_id: str) -> dict[str, Any]:
         console.print("🍃 Creando Refugio desde componentes...")
-        return self.create_page(root_id, "🍃 Refugio", "refuge", refuge_components(missions_db_id, habits_db_id, people_db_id))
+        return self.create_page(root_id, "Refugio", "refuge", refuge_components(missions_db_id, habits_db_id, people_db_id))
 
     def create_rituals(self, root_id: str) -> dict[str, dict[str, Any]]:
         console.print("🌅 Creando rituales iniciales...")
         return {
-            "Ritual del Amanecer": self.create_page(root_id, "🌅 Ritual del Amanecer", "morning", morning_ritual_components()),
-            "Ritual del Foco": self.create_page(root_id, "🎯 Ritual del Foco", "focus", focus_ritual_components()),
-            "Ritual de Pausa": self.create_page(root_id, "☕ Ritual de Pausa", "pause", pause_ritual_components()),
-            "Ritual del Cierre": self.create_page(root_id, "🌙 Ritual del Cierre", "closing", closing_ritual_components()),
+            "Ritual del Amanecer": self.create_page(root_id, "Ritual del Amanecer", "morning", morning_ritual_components()),
+            "Ritual del Foco": self.create_page(root_id, "Ritual del Foco", "focus", focus_ritual_components()),
+            "Ritual de Pausa": self.create_page(root_id, "Ritual de Pausa", "pause", pause_ritual_components()),
+            "Ritual del Cierre": self.create_page(root_id, "Ritual del Cierre", "closing", closing_ritual_components()),
         }
 
 
