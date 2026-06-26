@@ -27,5 +27,8 @@ if [[ ! -f "config.yaml" ]]; then
   cp config.example.yaml config.yaml
 fi
 
+echo "🍃 Validating local configuration..."
+python validate_config.py
+
 echo "◯ Running PersonalOS installer..."
 python install.py
