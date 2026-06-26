@@ -33,6 +33,10 @@ def callout(text: str, emoji: str = "🍃") -> dict[str, Any]:
     }
 
 
+def todo(text: str, checked: bool = False) -> dict[str, Any]:
+    return {"object": "block", "type": "to_do", "to_do": {"rich_text": rt(text), "checked": checked}}
+
+
 def link_to_database(database_id: str) -> dict[str, Any]:
     return {"object": "block", "type": "link_to_page", "link_to_page": {"type": "database_id", "database_id": database_id}}
 
@@ -102,3 +106,59 @@ def refuge_components(missions_db_id: str, habits_db_id: str, people_db_id: str)
         link_to_database(people_db_id),
     ])
     return blocks
+
+
+def morning_ritual_components() -> list[dict[str, Any]]:
+    return [
+        heading("🌅 Ritual del Amanecer", 1),
+        paragraph("Antes de empezar, volvemos al cuerpo y al presente."),
+        divider(),
+        callout("Respirá un momento. No hace falta resolver todo ahora.", "🍃"),
+        todo("Tomar agua"),
+        todo("Mirar el primer paso del día"),
+        todo("Elegir caminar despacio"),
+        divider(),
+        paragraph("Cuando estés listo, volvé al Refugio."),
+    ]
+
+
+def focus_ritual_components() -> list[dict[str, Any]]:
+    return [
+        heading("🎯 Ritual del Foco", 1),
+        paragraph("Una sola misión. Un solo paso. Sin ruido alrededor."),
+        divider(),
+        callout("Guardá lo que distrae. Prepará el espacio. Empezamos pequeño.", "🕯️"),
+        todo("Preparar el lugar"),
+        todo("Abrir solo lo necesario"),
+        todo("Hacer el siguiente paso"),
+        divider(),
+        paragraph("Si cuesta, reducimos la misión. El camino sigue."),
+    ]
+
+
+def pause_ritual_components() -> list[dict[str, Any]]:
+    return [
+        heading("☕ Ritual de Pausa", 1),
+        paragraph("Descansar también es parte del camino."),
+        divider(),
+        callout("Pausa breve. Agua. Respiración. Volvemos cuando haya aire.", "🍵"),
+        todo("Levantarse un minuto"),
+        todo("Tomar agua"),
+        todo("Respirar sin pantalla"),
+        divider(),
+        paragraph("No estás frenando. Estás recuperando balance."),
+    ]
+
+
+def closing_ritual_components() -> list[dict[str, Any]]:
+    return [
+        heading("🌙 Ritual del Cierre", 1),
+        paragraph("El día no necesita quedar perfecto. Solo preparado para continuar."),
+        divider(),
+        callout("Dejemos una piedra lista para mañana.", "🪨"),
+        todo("Preparar mochila o elementos necesarios"),
+        todo("Anotar el primer paso de mañana"),
+        todo("Cerrar el día sin culpa"),
+        divider(),
+        paragraph("Mañana seguimos caminando."),
+    ]
