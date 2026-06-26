@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v0.1.0 Seed."""
+"""PersonalOS Notion Installer v0.1.1 Seed.
+
+This installer intentionally keeps Notion payloads conservative.
+Notion accepts only a restricted subset of emojis for page/database icons, so
+all icons sent to the API pass through a small safe registry.
+"""
 
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
 from notion_client import Client
+from notion_client.errors import APIResponseError
 from rich.console import Console
 from rich.panel import Panel
 
@@ -24,6 +31,25 @@ from components import (
 
 console = Console()
 
+# Notion-safe icon registry.
+# Avoid symbolic glyphs such as "◯" as page/database icons; Notion rejects them.
+ICONS: dict[str, str] = {
+    "root": "🌱",
+    "refuge": "🌱",
+    "people": "👤",
+    "missions": "🎯",
+    "habits": "🌱",
+    "morning": "🌅",
+    "focus": "🎯",
+    "pause": "☕",
+    "closing": "🌙",
+    "fallback": "🌱",
+}
+
+PAGE_ID_RE = re.compile(
+    r"([a-fA-F0-9]{32}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})"
+)
+
 
 def title_prop(text: str) -> dict[str, Any]:
     return {"title": rt(text)}
@@ -35,6 +61,18 @@ def rich_text_prop(text: str) -> dict[str, Any]:
 
 def select_prop(options: list[tuple[str, str]]) -> dict[str, Any]:
     return {"select": {"options": [{"name": name, "color": color} for name, color in options]}}
+
+
+def safe_icon(icon_key: str) -> str:
+    return ICONS.get(icon_key, ICONS["fallback"])
+
+
+def normalize_page_id(value: str) -> str:
+    """Accept a plain Notion page id or a full Notion URL and return a page id."""
+    match = PAGE_ID_RE.search(value or "")
+    if not match:
+        return value
+    return match.group(1).replace("-", "")
 
 
 def load_config() -> dict[str, Any]:
@@ -56,7 +94,7 @@ def resolve_settings(config: dict[str, Any]) -> tuple[str, str]:
     if not parent_page_id:
         console.print("[red]Missing NOTION_PARENT_PAGE_ID. Export it or set it in config.yaml.[/red]")
         sys.exit(1)
-    return token, parent_page_id
+    return token, normalize_page_id(parent_page_id)
 
 
 class PersonalOSInstaller:
@@ -66,17 +104,39 @@ class PersonalOSInstaller:
         self.config = config
         self.people_ids: dict[str, str] = {}
 
-    def create_page(self, parent_id: str, name: str, emoji: str, children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        return self.notion.pages.create(parent={"page_id": parent_id}, icon={"type": "emoji", "emoji": emoji}, properties={"title": title_prop(name)}, children=children or [])
+    def create_page(self, parent_id: str, name: str, icon_key: str, children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        try:
+            return self.notion.pages.create(
+                parent={"page_id": parent_id},
+                icon={"type": "emoji", "emoji": safe_icon(icon_key)},
+                properties={"title": title_prop(name)},
+                children=children or [],
+            )
+        except APIResponseError as exc:
+            console.print(f"[red]Notion rejected page creation for:[/red] {name}")
+            console.print(f"[yellow]Icon key:[/yellow] {icon_key} -> {safe_icon(icon_key)}")
+            console.print(f"[yellow]Message:[/yellow] {exc}")
+            raise
 
-    def create_database(self, parent_id: str, name: str, emoji: str, properties: dict[str, Any]) -> dict[str, Any]:
-        return self.notion.databases.create(parent={"page_id": parent_id}, icon={"type": "emoji", "emoji": emoji}, title=rt(name), properties=properties)
+    def create_database(self, parent_id: str, name: str, icon_key: str, properties: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.notion.databases.create(
+                parent={"page_id": parent_id},
+                icon={"type": "emoji", "emoji": safe_icon(icon_key)},
+                title=rt(name),
+                properties=properties,
+            )
+        except APIResponseError as exc:
+            console.print(f"[red]Notion rejected database creation for:[/red] {name}")
+            console.print(f"[yellow]Icon key:[/yellow] {icon_key} -> {safe_icon(icon_key)}")
+            console.print(f"[yellow]Message:[/yellow] {exc}")
+            raise
 
     def create_db_item(self, database_id: str, properties: dict[str, Any], children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
 
     def run(self) -> None:
-        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.0 Seed"))
+        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.1 Seed"))
         root = self.create_root()
         people_db = self.create_people_db(root["id"])
         missions_db = self.create_missions_db(root["id"], people_db["id"])
@@ -100,11 +160,11 @@ class PersonalOSInstaller:
         return self.create_page(
             self.parent_page_id,
             self.config.get("personalos", {}).get("title", "◯ PersonalOS"),
-            "◯",
+            "root",
             [
                 {"object": "block", "type": "heading_1", "heading_1": {"rich_text": rt("◯ PersonalOS")}},
                 {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Un refugio digital para recuperar armonía, claridad y dirección.")}},
-                {"object": "block", "type": "callout", "callout": {"icon": {"type": "emoji", "emoji": "🍃"}, "rich_text": rt("Hoy no hace falta resolver todo. Solo caminar el siguiente paso.")}},
+                {"object": "block", "type": "callout", "callout": {"icon": {"type": "emoji", "emoji": safe_icon("refuge")}, "rich_text": rt("Hoy no hace falta resolver todo. Solo caminar el siguiente paso.")}},
             ],
         )
 
@@ -113,7 +173,7 @@ class PersonalOSInstaller:
         return self.create_database(
             root_id,
             "👤 Personas",
-            "👤",
+            "people",
             {
                 "Nombre": {"title": {}},
                 "Rol": select_prop([("Hija", "pink"), ("Hijo Mayor", "blue"), ("Hijo Menor", "green"), ("Madre", "purple"), ("Luis", "gray"), ("Familia", "orange")]),
@@ -128,7 +188,7 @@ class PersonalOSInstaller:
         return self.create_database(
             root_id,
             "🎯 Misiones",
-            "🍃",
+            "missions",
             {
                 "Misión": {"title": {}},
                 "Persona": {"relation": {"database_id": people_db_id, "single_property": {}}},
@@ -147,7 +207,7 @@ class PersonalOSInstaller:
         return self.create_database(
             root_id,
             "🌱 Hábitos",
-            "🌱",
+            "habits",
             {
                 "Hábito": {"title": {}},
                 "Persona": {"relation": {"database_id": people_db_id, "single_property": {}}},
@@ -213,15 +273,15 @@ class PersonalOSInstaller:
 
     def create_refuge(self, root_id: str, missions_db_id: str, habits_db_id: str, people_db_id: str) -> dict[str, Any]:
         console.print("🍃 Creando Refugio desde componentes...")
-        return self.create_page(root_id, "🍃 Refugio", "🍃", refuge_components(missions_db_id, habits_db_id, people_db_id))
+        return self.create_page(root_id, "🍃 Refugio", "refuge", refuge_components(missions_db_id, habits_db_id, people_db_id))
 
     def create_rituals(self, root_id: str) -> dict[str, dict[str, Any]]:
         console.print("🌅 Creando rituales iniciales...")
         return {
-            "Ritual del Amanecer": self.create_page(root_id, "🌅 Ritual del Amanecer", "🌅", morning_ritual_components()),
-            "Ritual del Foco": self.create_page(root_id, "🎯 Ritual del Foco", "🎯", focus_ritual_components()),
-            "Ritual de Pausa": self.create_page(root_id, "☕ Ritual de Pausa", "☕", pause_ritual_components()),
-            "Ritual del Cierre": self.create_page(root_id, "🌙 Ritual del Cierre", "🌙", closing_ritual_components()),
+            "Ritual del Amanecer": self.create_page(root_id, "🌅 Ritual del Amanecer", "morning", morning_ritual_components()),
+            "Ritual del Foco": self.create_page(root_id, "🎯 Ritual del Foco", "focus", focus_ritual_components()),
+            "Ritual de Pausa": self.create_page(root_id, "☕ Ritual de Pausa", "pause", pause_ritual_components()),
+            "Ritual del Cierre": self.create_page(root_id, "🌙 Ritual del Cierre", "closing", closing_ritual_components()),
         }
 
 
