@@ -13,7 +13,14 @@ from notion_client import Client
 from rich.console import Console
 from rich.panel import Panel
 
-from components import refuge_components, rt
+from components import (
+    closing_ritual_components,
+    focus_ritual_components,
+    morning_ritual_components,
+    pause_ritual_components,
+    refuge_components,
+    rt,
+)
 
 console = Console()
 
@@ -60,20 +67,10 @@ class PersonalOSInstaller:
         self.people_ids: dict[str, str] = {}
 
     def create_page(self, parent_id: str, name: str, emoji: str, children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        return self.notion.pages.create(
-            parent={"page_id": parent_id},
-            icon={"type": "emoji", "emoji": emoji},
-            properties={"title": title_prop(name)},
-            children=children or [],
-        )
+        return self.notion.pages.create(parent={"page_id": parent_id}, icon={"type": "emoji", "emoji": emoji}, properties={"title": title_prop(name)}, children=children or [])
 
     def create_database(self, parent_id: str, name: str, emoji: str, properties: dict[str, Any]) -> dict[str, Any]:
-        return self.notion.databases.create(
-            parent={"page_id": parent_id},
-            icon={"type": "emoji", "emoji": emoji},
-            title=rt(name),
-            properties=properties,
-        )
+        return self.notion.databases.create(parent={"page_id": parent_id}, icon={"type": "emoji", "emoji": emoji}, title=rt(name), properties=properties)
 
     def create_db_item(self, database_id: str, properties: dict[str, Any], children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
@@ -88,9 +85,12 @@ class PersonalOSInstaller:
         self.seed_missions(missions_db["id"])
         self.seed_habits(habits_db["id"])
         refuge = self.create_refuge(root["id"], missions_db["id"], habits_db["id"], people_db["id"])
+        rituals = self.create_rituals(root["id"])
         console.print("\n[green]☀ Tu Refugio está listo.[/green]")
         console.print(f"Raíz: {root['url']}")
         console.print(f"Refugio: {refuge['url']}")
+        for name, page in rituals.items():
+            console.print(f"{name}: {page['url']}")
         console.print(f"Personas: {people_db['url']}")
         console.print(f"Misiones: {missions_db['url']}")
         console.print(f"Hábitos: {habits_db['url']}")
@@ -214,6 +214,15 @@ class PersonalOSInstaller:
     def create_refuge(self, root_id: str, missions_db_id: str, habits_db_id: str, people_db_id: str) -> dict[str, Any]:
         console.print("🍃 Creando Refugio desde componentes...")
         return self.create_page(root_id, "🍃 Refugio", "🍃", refuge_components(missions_db_id, habits_db_id, people_db_id))
+
+    def create_rituals(self, root_id: str) -> dict[str, dict[str, Any]]:
+        console.print("🌅 Creando rituales iniciales...")
+        return {
+            "Ritual del Amanecer": self.create_page(root_id, "🌅 Ritual del Amanecer", "🌅", morning_ritual_components()),
+            "Ritual del Foco": self.create_page(root_id, "🎯 Ritual del Foco", "🎯", focus_ritual_components()),
+            "Ritual de Pausa": self.create_page(root_id, "☕ Ritual de Pausa", "☕", pause_ritual_components()),
+            "Ritual del Cierre": self.create_page(root_id, "🌙 Ritual del Cierre", "🌙", closing_ritual_components()),
+        }
 
 
 def main() -> None:
