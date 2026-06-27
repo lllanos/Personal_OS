@@ -4,6 +4,16 @@ PersonalOS is a calm personal operating system concept designed to reduce cognit
 
 This repository starts with a Notion installer prototype, but PersonalOS is not limited to Notion. Notion is the first storage and prototyping layer.
 
+## Repository
+
+Canonical GitHub repository for future commits:
+
+```text
+lllanos/Personal_OS
+```
+
+When generating scripts, documentation, commits, or upgrade instructions for this project, use `lllanos/Personal_OS` as the repository full name.
+
 ## Core idea
 
 PersonalOS does not try to maximize productivity. It helps people recover clarity, rhythm, and balance.
@@ -33,6 +43,19 @@ PersonalOS does not try to maximize productivity. It helps people recover clarit
 - 🎯 Misiones
 - 🌱 Hábitos
 
+## MVP direction
+
+The next MVP direction keeps the visible experience centered on one page while adding safe upgrade behavior:
+
+- PersonalOS / Centro de Control
+- Hoy / Ahora
+- No olvidar
+- Personas
+- Dominios de vida
+- Educación / Aprendizaje
+- Bloqueados
+- Captura rápida
+
 ## Quick start
 
 ```bash
@@ -47,12 +70,26 @@ bash dry_run.sh
 bash run_installer.sh
 ```
 
+## MVP upgrade / enroll
+
+```bash
+python Install.py --personalos-upgrade --enroll
+```
+
+Dry run:
+
+```bash
+python Install.py --personalos-upgrade --dry-run
+```
+
 ## Repository structure
 
 ```text
 installer/     Notion installer and setup files
-docs/          Lightweight documentation placeholders
+docs/          Lightweight documentation and MVP notes
+templates/     PersonalOS templates, databases, and views
 assets/        Visual identity placeholders
 examples/      Example configuration files
 tests/         Future validation tests
+scripts/       Upgrade and support scripts
 ```
