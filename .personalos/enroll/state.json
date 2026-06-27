@@ -1,0 +1,15 @@
+{
+  "system": "PersonalOS",
+  "mode": "mvp-initial-enroll",
+  "created_at": "20260627_180320",
+  "status": "ready",
+  "recommended_first_module": "Educación / Aprendizaje",
+  "questions": [
+    "¿A quién querés organizar?",
+    "¿Qué área querés organizar primero?",
+    "¿Qué elemento concreto existe dentro de esa área?",
+    "¿Hay alguna tarea, fecha, documento o decisión asociada?",
+    "¿Cuál es la próxima acción?"
+  ],
+  "principle": "Una sola página para vivir el sistema. Bases internas para sostenerlo."
+}
