@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Local configuration validator for PersonalOS Installer."""
+"""Local configuration validator for PersonalOS Installer.
+
+The first experience now asks for the initial person interactively, so people in
+config.yaml is optional. The only hard requirements are Notion credentials and a
+valid parent page id.
+"""
 
 from __future__ import annotations
 
 import os
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +26,8 @@ def load_config() -> dict[str, Any]:
     path = Path("config.yaml") if Path("config.yaml").exists() else Path("config.example.yaml")
     if not path.exists():
         raise FileNotFoundError("Missing config.yaml or config.example.yaml")
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data or {}
 
 
 def main() -> int:
@@ -54,11 +59,11 @@ def main() -> int:
         errors.append("El parent_page_id no parece un ID válido de Notion.")
 
     if not people:
-        errors.append("No hay personas definidas en config.yaml.")
+        warnings.append("No hay personas definidas en config.yaml. Está bien: el First Experience las pedirá en pantalla.")
     else:
         roles = {person.get("role") for person in people}
         if primary_person and primary_person not in roles:
-            errors.append(f"primary_person={primary_person!r} no existe dentro de people.role.")
+            warnings.append(f"primary_person={primary_person!r} no existe dentro de people.role. Se ignorará para el First Experience.")
 
     if errors:
         console.print("[red]Validación fallida:[/red]")
