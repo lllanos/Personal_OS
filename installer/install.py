@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v0.1.3 Seed.
+"""PersonalOS Notion Installer v2.0 Seed.
 
-This installer intentionally keeps Notion payloads conservative.
-Notion accepts only a restricted subset of emojis for page/database icons, so
-all icons sent to the API pass through a small safe registry.
-
-Titles are intentionally clean: visual symbols live in Notion icons, not in page titles.
+PersonalOS v2 is not a documentation installer.
+It creates an evaluable Notion experience: Refugio, Camino, Jardin, Bitacora,
+Companion selection, and the first Resource setup.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,43 +22,79 @@ from notion_client import Client
 from notion_client.errors import APIResponseError
 from rich.console import Console
 from rich.panel import Panel
-
-from components import (
-    closing_ritual_components,
-    focus_ritual_components,
-    morning_ritual_components,
-    pause_ritual_components,
-    refuge_components,
-    rt,
-)
+from rich.prompt import Prompt
 
 console = Console()
 
+INSTALLER_VERSION = "2.0.0-seed"
+SCHEMA_VERSION = "2.0"
+
 ICONS: dict[str, str] = {
     "root": "🌱",
-    "refuge": "🌱",
-    "people": "👤",
-    "missions": "🎯",
-    "habits": "🌱",
-    "morning": "🌅",
-    "focus": "🎯",
-    "pause": "☕",
-    "closing": "🌙",
+    "refugio": "🍃",
+    "camino": "🧭",
+    "paso": "👣",
+    "jardin": "🌿",
+    "bitacora": "📖",
+    "persona": "👤",
+    "resource": "📚",
+    "aurora": "🌸",
+    "samwise": "🌿",
+    "mellon": "🍃",
     "fallback": "🌱",
 }
-
-DEFAULT_PEOPLE: list[dict[str, str]] = [
-    {"name": "Hija", "role": "Hija"},
-    {"name": "Hijo Mayor", "role": "Hijo Mayor"},
-    {"name": "Hijo Menor", "role": "Hijo Menor"},
-    {"name": "Madre", "role": "Madre"},
-    {"name": "Luis", "role": "Luis"},
-    {"name": "Familia", "role": "Familia"},
-]
 
 PAGE_ID_RE = re.compile(
     r"([a-fA-F0-9]{32}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})"
 )
+
+PROFILE_OPTIONS = {
+    "1": "Adulto",
+    "2": "Adolescente",
+    "3": "Niño",
+    "4": "Otra persona",
+}
+
+COMPANION_OPTIONS = {
+    "1": "Aurora",
+    "2": "Samwise",
+}
+
+CLASSROOM_OPTIONS = {
+    "1": "Navegador",
+    "2": "Aplicación",
+    "3": "Más tarde",
+}
+
+
+@dataclass
+class FirstExperience:
+    profile: str
+    display_name: str
+    companion: str
+    classroom_mode: str
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def safe_icon(icon_key: str) -> str:
+    return ICONS.get(icon_key, ICONS["fallback"])
+
+
+def normalize_page_id(value: str) -> str:
+    match = PAGE_ID_RE.search(value or "")
+    if not match:
+        return value
+    return match.group(1).replace("-", "")
+
+
+def rt(text: str, link: str | None = None) -> list[dict[str, Any]]:
+    item: dict[str, Any] = {"type": "text", "text": {"content": text}}
+    if link:
+        item["text"]["link"] = {"url": link}
+    return [item]
 
 
 def title_prop(text: str) -> dict[str, Any]:
@@ -72,32 +109,32 @@ def select_prop(options: list[tuple[str, str]]) -> dict[str, Any]:
     return {"select": {"options": [{"name": name, "color": color} for name, color in options]}}
 
 
-def safe_icon(icon_key: str) -> str:
-    return ICONS.get(icon_key, ICONS["fallback"])
+def paragraph(text: str) -> dict[str, Any]:
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt(text)}}
 
 
-def normalize_page_id(value: str) -> str:
-    match = PAGE_ID_RE.search(value or "")
-    if not match:
-        return value
-    return match.group(1).replace("-", "")
+def heading(text: str, level: int = 2) -> dict[str, Any]:
+    block_type = f"heading_{level}"
+    return {"object": "block", "type": block_type, block_type: {"rich_text": rt(text)}}
 
 
-def clean_title(value: str) -> str:
-    """Remove known duplicated visual prefixes from titles.
+def callout(text: str, icon_key: str = "refugio") -> dict[str, Any]:
+    return {
+        "object": "block",
+        "type": "callout",
+        "callout": {
+            "icon": {"type": "emoji", "emoji": safe_icon(icon_key)},
+            "rich_text": rt(text),
+        },
+    }
 
-    Notion already renders page/database icons, so page titles should remain text-only.
-    """
-    prefixes = ["◯ ", "👤 ", "🎯 ", "🌱 ", "🍃 ", "🌅 ", "☕ ", "🌙 ", "👧 ", "👦 ", "👩 ", "👨 ", "🏡 "]
-    title = value.strip()
-    changed = True
-    while changed:
-        changed = False
-        for prefix in prefixes:
-            if title.startswith(prefix):
-                title = title[len(prefix):].strip()
-                changed = True
-    return title
+
+def divider() -> dict[str, Any]:
+    return {"object": "block", "type": "divider", "divider": {}}
+
+
+def link_paragraph(label: str, url: str) -> dict[str, Any]:
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt(label, url)}}
 
 
 def load_config() -> dict[str, Any]:
@@ -122,45 +159,83 @@ def resolve_settings(config: dict[str, Any]) -> tuple[str, str]:
     return token, normalize_page_id(parent_page_id)
 
 
-def configured_people(config: dict[str, Any]) -> list[dict[str, str]]:
-    people = config.get("people")
-    if not isinstance(people, list) or not people:
-        console.print("[yellow]⚠ No people found in config.yaml. Using default PersonalOS people.[/yellow]")
-        return DEFAULT_PEOPLE
-
-    valid_people: list[dict[str, str]] = []
-    for item in people:
-        if not isinstance(item, dict):
-            continue
-        name = clean_title(str(item.get("name", "")).strip())
-        role = str(item.get("role", "")).strip()
-        if name and role:
-            valid_people.append({"name": name, "role": role})
-
-    if not valid_people:
-        console.print("[yellow]⚠ Config people are invalid. Using default PersonalOS people.[/yellow]")
-        return DEFAULT_PEOPLE
-    return valid_people
+def choose_from(title: str, options: dict[str, str]) -> str:
+    console.print(f"\n[bold]{title}[/bold]")
+    for key, value in options.items():
+        console.print(f"  {key}. {value}")
+    choice = Prompt.ask("Elegí una opción", choices=list(options.keys()), default="1")
+    return options[choice]
 
 
-class PersonalOSInstaller:
-    def __init__(self, notion: Client, parent_page_id: str, config: dict[str, Any]) -> None:
+def run_first_experience() -> FirstExperience:
+    console.print(
+        Panel(
+            "Bienvenido.\n\nHoy vamos a preparar tu Refugio.\nNo hace falta resolver toda la vida hoy.\nSolo dar el primer paso.",
+            title="🍃 PersonalOS v2",
+            subtitle="First Experience",
+        )
+    )
+
+    profile = choose_from("¿Para quién estamos preparando este Refugio?", PROFILE_OPTIONS)
+    display_name = Prompt.ask("\n¿Cómo querés que te llame?").strip() or "Persona"
+
+    console.print("\nCada persona prefiere ser acompañada de una manera distinta.")
+    console.print("[dim]Aurora: presencia serena. Samwise: compañero de camino.[/dim]")
+    companion = choose_from("¿Cómo preferís que te acompañe?", COMPANION_OPTIONS)
+
+    classroom_mode = choose_from("¿Cómo preferís abrir Classroom cuando haga falta?", CLASSROOM_OPTIONS)
+
+    console.print("\n[green]Perfecto.[/green]")
+    console.print("Ya tengo lo necesario. El resto lo iremos descubriendo juntos.\n")
+    Prompt.ask("Mellon. Presioná ENTER para preparar tu Refugio", default="")
+
+    return FirstExperience(
+        profile=profile,
+        display_name=display_name,
+        companion=companion,
+        classroom_mode=classroom_mode,
+    )
+
+
+class PersonalOSV2Installer:
+    def __init__(self, notion: Client, parent_page_id: str, config: dict[str, Any], fx: FirstExperience) -> None:
         self.notion = notion
         self.parent_page_id = parent_page_id
         self.config = config
-        self.people_ids: dict[str, str] = {}
+        self.fx = fx
+        self.mapping: dict[str, Any] = {
+            "installer_version": INSTALLER_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "created_at": now_iso(),
+            "first_experience": asdict(fx),
+            "objects": {},
+        }
+
+    def save_mapping(self) -> None:
+        target_dir = Path(".personalos")
+        target_dir.mkdir(exist_ok=True)
+        path = target_dir / "notion_mappings_v2.json"
+        path.write_text(json.dumps(self.mapping, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"[dim]Mapping local guardado en {path}[/dim]")
+
+    def remember(self, key: str, obj: dict[str, Any]) -> dict[str, Any]:
+        self.mapping["objects"][key] = {
+            "id": obj.get("id"),
+            "url": obj.get("url"),
+            "created_at": now_iso(),
+        }
+        return obj
 
     def create_page(self, parent_id: str, name: str, icon_key: str, children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         try:
             return self.notion.pages.create(
                 parent={"page_id": parent_id},
                 icon={"type": "emoji", "emoji": safe_icon(icon_key)},
-                properties={"title": title_prop(clean_title(name))},
+                properties={"title": title_prop(name)},
                 children=children or [],
             )
         except APIResponseError as exc:
             console.print(f"[red]Notion rejected page creation for:[/red] {name}")
-            console.print(f"[yellow]Icon key:[/yellow] {icon_key} -> {safe_icon(icon_key)}")
             console.print(f"[yellow]Message:[/yellow] {exc}")
             raise
 
@@ -169,195 +244,248 @@ class PersonalOSInstaller:
             return self.notion.databases.create(
                 parent={"page_id": parent_id},
                 icon={"type": "emoji", "emoji": safe_icon(icon_key)},
-                title=rt(clean_title(name)),
+                title=rt(name),
                 properties=properties,
             )
         except APIResponseError as exc:
             console.print(f"[red]Notion rejected database creation for:[/red] {name}")
-            console.print(f"[yellow]Icon key:[/yellow] {icon_key} -> {safe_icon(icon_key)}")
             console.print(f"[yellow]Message:[/yellow] {exc}")
             raise
 
     def create_db_item(self, database_id: str, properties: dict[str, Any], children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
 
+    def append_blocks(self, page_id: str, blocks: list[dict[str, Any]]) -> None:
+        if not blocks:
+            return
+        self.notion.blocks.children.append(block_id=page_id, children=blocks)
+
+    def companion_welcome(self) -> str:
+        if self.fx.companion == "Samwise":
+            return f"Qué bueno verte, {self.fx.display_name}. Todavía queda camino, pero hoy alcanza con un paso."
+        return f"Bienvenido, {self.fx.display_name}. Hoy alcanza con un solo paso."
+
+    def companion_closing(self) -> str:
+        if self.fx.companion == "Samwise":
+            return "Si el camino pesa, lo hacemos más liviano. Un paso sigue siendo camino."
+        return "No hace falta resolver todo. El Refugio va a seguir acá cuando lo necesites."
+
     def run(self) -> None:
-        console.print(Panel("🍃 Preparando tu Refugio...", title="◯ PersonalOS Installer", subtitle="v0.1.3 Seed"))
-        root = self.create_root()
-        people_db = self.create_people_db(root["id"])
-        missions_db = self.create_missions_db(root["id"], people_db["id"])
-        habits_db = self.create_habits_db(root["id"], people_db["id"])
-        self.seed_people(people_db["id"])
-        self.ensure_people_available(people_db["id"])
-        self.seed_missions(missions_db["id"])
-        self.seed_habits(habits_db["id"])
-        refuge = self.create_refuge(root["id"], missions_db["id"], habits_db["id"], people_db["id"])
-        rituals = self.create_rituals(root["id"])
-        console.print("\n[green]☀ Tu Refugio está listo.[/green]")
-        console.print(f"Raíz: {root['url']}")
-        console.print(f"Refugio: {refuge['url']}")
-        for name, page in rituals.items():
-            console.print(f"{name}: {page['url']}")
-        console.print(f"Personas: {people_db['url']}")
-        console.print(f"Misiones: {missions_db['url']}")
-        console.print(f"Hábitos: {habits_db['url']}")
+        console.print("🌱 Preparando tu Refugio...")
+        root = self.remember("root", self.create_root())
+
+        console.print("🌿 Plantando Mi Jardín...")
+        jardin = self.remember("jardin", self.create_jardin(root["id"]))
+        persona_db = self.remember("persona_db", self.create_persona_db(jardin["id"]))
+        resources_db = self.remember("resources_db", self.create_resources_db(jardin["id"]))
+        companion_page = self.remember("companion", self.create_companion_page(jardin["id"]))
+
+        console.print("🧭 Trazando el primer Camino...")
+        camino = self.remember("camino", self.create_camino(root["id"]))
+
+        console.print("📖 Preparando la Bitácora...")
+        bitacora = self.remember("bitacora", self.create_bitacora(root["id"]))
+
+        console.print("📚 Configurando Classroom como primer Recurso...")
+        self.seed_persona(persona_db["id"])
+        self.seed_classroom(resources_db["id"])
+
+        console.print("🍃 Abriendo el Refugio...")
+        refugio = self.remember("refugio", self.create_refugio(root["id"], camino["url"], jardin["url"], bitacora["url"]))
+
+        self.append_root_navigation(root["id"], refugio["url"], camino["url"], jardin["url"], bitacora["url"], companion_page["url"])
+        self.save_mapping()
+
+        console.print("\n[green]Mellon.[/green]")
+        console.print("Tu Refugio está listo.\n")
+        console.print(f"PersonalOS: {root['url']}")
+        console.print(f"Refugio: {refugio['url']}")
+        console.print(f"Camino: {camino['url']}")
+        console.print(f"Mi Jardín: {jardin['url']}")
+        console.print(f"Bitácora: {bitacora['url']}")
 
     def create_root(self) -> dict[str, Any]:
-        console.print("🍃 Creando raíz PersonalOS...")
         return self.create_page(
             self.parent_page_id,
-            self.config.get("personalos", {}).get("title", "PersonalOS"),
+            "PersonalOS",
             "root",
             [
-                {"object": "block", "type": "heading_1", "heading_1": {"rich_text": rt("◯ PersonalOS")}},
-                {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt("Un refugio digital para recuperar armonía, claridad y dirección.")}},
-                {"object": "block", "type": "callout", "callout": {"icon": {"type": "emoji", "emoji": safe_icon("refuge")}, "rich_text": rt("Hoy no hace falta resolver todo. Solo caminar el siguiente paso.")}},
+                heading("PersonalOS", 1),
+                paragraph("Un Refugio digital para recuperar calma, claridad y dirección."),
+                callout(self.companion_welcome(), "refugio"),
+                paragraph(f"Companion elegido: {self.fx.companion}"),
+                paragraph(f"Perfil inicial: {self.fx.profile}"),
+                divider(),
+                paragraph("Este espacio fue creado para evaluar PersonalOS v2 como experiencia viva, no como documentación técnica."),
             ],
         )
 
-    def create_people_db(self, root_id: str) -> dict[str, Any]:
-        console.print("👤 Creando Personas...")
-        return self.create_database(
+    def append_root_navigation(self, root_id: str, refugio_url: str, camino_url: str, jardin_url: str, bitacora_url: str, companion_url: str) -> None:
+        self.append_blocks(
             root_id,
-            "Personas",
-            "people",
+            [
+                heading("Entrar", 2),
+                link_paragraph("🍃 Refugio", refugio_url),
+                link_paragraph("🧭 Camino", camino_url),
+                link_paragraph("🌿 Mi Jardín", jardin_url),
+                link_paragraph("📖 Bitácora", bitacora_url),
+                link_paragraph(f"🤝 Companion: {self.fx.companion}", companion_url),
+            ],
+        )
+
+    def create_refugio(self, root_id: str, camino_url: str, jardin_url: str, bitacora_url: str) -> dict[str, Any]:
+        return self.create_page(
+            root_id,
+            "Refugio",
+            "refugio",
+            [
+                heading(f"Bienvenido, {self.fx.display_name}.", 1),
+                callout(self.companion_welcome(), "refugio"),
+                heading("Tu Camino", 2),
+                paragraph("Hoy no hace falta ver todo. Solo el siguiente paso."),
+                link_paragraph("🧭 Ir al Camino", camino_url),
+                heading("Tu siguiente paso", 2),
+                callout("Abrir Classroom. Si todavía no está listo, PersonalOS ya preparó el recurso en Mi Jardín.", "paso"),
+                heading("Cuando termines", 2),
+                link_paragraph("📖 Dejar una pequeña reflexión", bitacora_url),
+                heading("Cuidar el espacio", 2),
+                link_paragraph("🌿 Ir a Mi Jardín", jardin_url),
+                divider(),
+                paragraph(self.companion_closing()),
+            ],
+        )
+
+    def create_camino(self, root_id: str) -> dict[str, Any]:
+        resource_hint = "Classroom se abrirá desde navegador." if self.fx.classroom_mode == "Navegador" else "Classroom quedó preparado según tu preferencia."
+        if self.fx.classroom_mode == "Más tarde":
+            resource_hint = "Classroom quedó pendiente para configurar más tarde."
+        return self.create_page(
+            root_id,
+            "Camino",
+            "camino",
+            [
+                heading("Camino inicial", 1),
+                paragraph("Preparar el primer estudio."),
+                callout("Un solo paso visible. Nada más.", "camino"),
+                heading("Paso actual", 2),
+                paragraph("Abrir Classroom."),
+                callout(resource_hint, "resource"),
+                paragraph("Cuando termines, volvé al Refugio o dejá una reflexión en la Bitácora."),
+            ],
+        )
+
+    def create_jardin(self, root_id: str) -> dict[str, Any]:
+        return self.create_page(
+            root_id,
+            "Mi Jardín",
+            "jardin",
+            [
+                heading("Mi Jardín", 1),
+                paragraph("Acá crecen las personas, recursos y preferencias del Refugio."),
+                callout("Por ahora solo necesitamos lo esencial: Persona, Companion y Classroom.", "jardin"),
+            ],
+        )
+
+    def create_companion_page(self, jardin_id: str) -> dict[str, Any]:
+        if self.fx.companion == "Samwise":
+            title = "Samwise"
+            icon = "samwise"
+            description = "Compañero de camino. Cercano, simple y constante."
+            phrase = "Un paso más también cuenta."
+        else:
+            title = "Aurora"
+            icon = "aurora"
+            description = "Presencia serena. Calma, suave y contemplativa."
+            phrase = "Hoy alcanza con algo pequeño."
+        return self.create_page(
+            jardin_id,
+            title,
+            icon,
+            [
+                heading(title, 1),
+                paragraph(description),
+                callout(phrase, icon),
+                paragraph("El Companion cambia la voz de PersonalOS, no sus principios."),
+            ],
+        )
+
+    def create_bitacora(self, root_id: str) -> dict[str, Any]:
+        return self.create_page(
+            root_id,
+            "Bitácora",
+            "bitacora",
+            [
+                heading("Bitácora", 1),
+                paragraph("No es un historial. Es memoria con significado."),
+                callout("Después del primer paso, podés registrar cómo fue. También podés no responder.", "bitacora"),
+                heading("Primera reflexión", 2),
+                paragraph("¿Cómo fue este paso?"),
+                paragraph("Más claro / Más tranquilo / Igual / Prefiero no responder"),
+                paragraph("Notas libres:"),
+            ],
+        )
+
+    def create_persona_db(self, jardin_id: str) -> dict[str, Any]:
+        return self.create_database(
+            jardin_id,
+            "Persona",
+            "persona",
             {
                 "Nombre": {"title": {}},
-                "Rol": select_prop([("Hija", "pink"), ("Hijo Mayor", "blue"), ("Hijo Menor", "green"), ("Madre", "purple"), ("Luis", "gray"), ("Familia", "orange")]),
-                "Activo": {"checkbox": {}},
-                "Tema": select_prop([("Zen", "green"), ("Bosque", "green"), ("Mar", "blue"), ("Montaña", "gray"), ("Minimal", "default")]),
-                "Estación": select_prop([("Primavera", "green"), ("Verano", "yellow"), ("Otoño", "orange"), ("Invierno", "blue")]),
+                "Perfil": select_prop([("Adulto", "blue"), ("Adolescente", "green"), ("Niño", "yellow"), ("Otra persona", "gray")]),
+                "Companion": select_prop([("Aurora", "pink"), ("Samwise", "green")]),
+                "Estado": select_prop([("Activo", "green"), ("Descansando", "blue")]),
             },
         )
 
-    def create_missions_db(self, root_id: str, people_db_id: str) -> dict[str, Any]:
-        console.print("🪨 Preparando el Camino...")
+    def create_resources_db(self, jardin_id: str) -> dict[str, Any]:
         return self.create_database(
-            root_id,
-            "Misiones",
-            "missions",
+            jardin_id,
+            "Recursos",
+            "resource",
             {
-                "Misión": {"title": {}},
-                "Persona": {"relation": {"database_id": people_db_id, "single_property": {}}},
-                "Estado": select_prop([("Pendiente", "gray"), ("En camino", "yellow"), ("Pausa", "blue"), ("Completada", "green")]),
-                "Momento": select_prop([("Amanecer", "yellow"), ("Foco", "green"), ("Pausa", "blue"), ("Cierre", "purple")]),
-                "Dominio": select_prop([("Educación", "blue"), ("Hogar", "green"), ("Salud", "red"), ("Familia", "orange"), ("Personal", "purple")]),
-                "Tiempo": {"number": {"format": "number"}},
-                "Balance": select_prop([("Sereno", "green"), ("Cargado", "yellow"), ("Necesita pausa", "blue"), ("En movimiento", "orange")]),
-                "Siguiente paso": {"rich_text": {}},
-                "Después": {"rich_text": {}},
+                "Recurso": {"title": {}},
+                "Tipo": select_prop([("Educación", "blue"), ("Documento", "gray"), ("Aplicación", "green"), ("Sitio web", "purple")]),
+                "Estado": select_prop([("Descubierto", "gray"), ("Configurado", "green"), ("Más tarde", "yellow")]),
+                "Modo": select_prop([("Navegador", "blue"), ("Aplicación", "green"), ("Más tarde", "yellow")]),
+                "URL": {"url": {}},
+                "Notas": {"rich_text": {}},
             },
         )
 
-    def create_habits_db(self, root_id: str, people_db_id: str) -> dict[str, Any]:
-        console.print("🌱 Plantando hábitos...")
-        return self.create_database(
-            root_id,
-            "Hábitos",
-            "habits",
-            {
-                "Hábito": {"title": {}},
-                "Persona": {"relation": {"database_id": people_db_id, "single_property": {}}},
-                "Estado": select_prop([("Activo", "green"), ("Pausado", "yellow"), ("Descanso", "blue")]),
-                "Frecuencia": select_prop([("Diario", "green"), ("Lunes a viernes", "blue"), ("Semanal", "yellow"), ("Cuando haga falta", "gray")]),
-                "Hoy": {"checkbox": {}},
-            },
-        )
-
-    def seed_people(self, people_db_id: str) -> None:
-        season = self.config.get("personalos", {}).get("season", "Otoño")
-        theme = self.config.get("personalos", {}).get("theme", "zen").capitalize()
-        for person in configured_people(self.config):
-            page = self.create_db_item(
-                people_db_id,
-                {
-                    "Nombre": title_prop(clean_title(person["name"])),
-                    "Rol": {"select": {"name": person["role"]}},
-                    "Activo": {"checkbox": True},
-                    "Tema": {"select": {"name": theme}},
-                    "Estación": {"select": {"name": season}},
-                },
-            )
-            self.people_ids[person["role"]] = page["id"]
-
-    def ensure_people_available(self, people_db_id: str) -> None:
-        if self.people_ids:
-            return
-        console.print("[yellow]⚠ No people were created. Creating fallback person.[/yellow]")
+    def seed_persona(self, persona_db_id: str) -> None:
         page = self.create_db_item(
-            people_db_id,
+            persona_db_id,
             {
-                "Nombre": title_prop("Hija"),
-                "Rol": {"select": {"name": "Hija"}},
-                "Activo": {"checkbox": True},
-                "Tema": {"select": {"name": "Zen"}},
-                "Estación": {"select": {"name": "Otoño"}},
+                "Nombre": title_prop(self.fx.display_name),
+                "Perfil": {"select": {"name": self.fx.profile}},
+                "Companion": {"select": {"name": self.fx.companion}},
+                "Estado": {"select": {"name": "Activo"}},
             },
         )
-        self.people_ids["Hija"] = page["id"]
+        self.remember("persona", page)
 
-    def primary_person_id(self) -> str:
-        primary_role = self.config.get("personalos", {}).get("primary_person", "Hija")
-        if primary_role in self.people_ids:
-            return self.people_ids[primary_role]
-        if "Hija" in self.people_ids:
-            return self.people_ids["Hija"]
-        return next(iter(self.people_ids.values()))
-
-    def seed_missions(self, missions_db_id: str) -> None:
-        person_id = self.primary_person_id()
-        seeds = [
-            ("Abrir Classroom", "En camino", "Amanecer", "Educación", 3, "Sereno", "Abrir Classroom.", "Leer la consigna."),
-            ("Leer la consigna", "Pendiente", "Foco", "Educación", 5, "Sereno", "Leer solo la consigna, sin resolver todavía.", "Subrayar qué hay que entregar."),
-        ]
-        for mission, status, moment, domain, minutes, balance, next_step, after in seeds:
-            self.create_db_item(
-                missions_db_id,
-                {
-                    "Misión": title_prop(mission),
-                    "Persona": {"relation": [{"id": person_id}]},
-                    "Estado": {"select": {"name": status}},
-                    "Momento": {"select": {"name": moment}},
-                    "Dominio": {"select": {"name": domain}},
-                    "Tiempo": {"number": minutes},
-                    "Balance": {"select": {"name": balance}},
-                    "Siguiente paso": rich_text_prop(next_step),
-                    "Después": rich_text_prop(after),
-                },
-            )
-
-    def seed_habits(self, habits_db_id: str) -> None:
-        person_id = self.primary_person_id()
-        for habit in ["Tomar agua", "Preparar mochila", "Preparar descanso"]:
-            self.create_db_item(
-                habits_db_id,
-                {
-                    "Hábito": title_prop(habit),
-                    "Persona": {"relation": [{"id": person_id}]},
-                    "Estado": {"select": {"name": "Activo"}},
-                    "Frecuencia": {"select": {"name": "Diario"}},
-                    "Hoy": {"checkbox": False},
-                },
-            )
-
-    def create_refuge(self, root_id: str, missions_db_id: str, habits_db_id: str, people_db_id: str) -> dict[str, Any]:
-        console.print("🍃 Creando Refugio desde componentes...")
-        return self.create_page(root_id, "Refugio", "refuge", refuge_components(missions_db_id, habits_db_id, people_db_id))
-
-    def create_rituals(self, root_id: str) -> dict[str, dict[str, Any]]:
-        console.print("🌅 Creando rituales iniciales...")
-        return {
-            "Ritual del Amanecer": self.create_page(root_id, "Ritual del Amanecer", "morning", morning_ritual_components()),
-            "Ritual del Foco": self.create_page(root_id, "Ritual del Foco", "focus", focus_ritual_components()),
-            "Ritual de Pausa": self.create_page(root_id, "Ritual de Pausa", "pause", pause_ritual_components()),
-            "Ritual del Cierre": self.create_page(root_id, "Ritual del Cierre", "closing", closing_ritual_components()),
+    def seed_classroom(self, resources_db_id: str) -> None:
+        status = "Más tarde" if self.fx.classroom_mode == "Más tarde" else "Configurado"
+        url = "https://classroom.google.com" if self.fx.classroom_mode == "Navegador" else None
+        props: dict[str, Any] = {
+            "Recurso": title_prop("Classroom"),
+            "Tipo": {"select": {"name": "Educación"}},
+            "Estado": {"select": {"name": status}},
+            "Modo": {"select": {"name": self.fx.classroom_mode}},
+            "Notas": rich_text_prop("Primer recurso de PersonalOS v2. Se configura una sola vez."),
         }
+        if url:
+            props["URL"] = {"url": url}
+        page = self.create_db_item(resources_db_id, props)
+        self.remember("resource_classroom", page)
 
 
 def main() -> None:
     config = load_config()
     token, parent_page_id = resolve_settings(config)
-    installer = PersonalOSInstaller(Client(auth=token), parent_page_id, config)
+    first_experience = run_first_experience()
+    installer = PersonalOSV2Installer(Client(auth=token), parent_page_id, config, first_experience)
     installer.run()
 
 
