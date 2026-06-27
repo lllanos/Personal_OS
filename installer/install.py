@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v2.0 Seed.
+"""PersonalOS Notion Installer v2.1 Seed.
 
-PersonalOS v2 is not a documentation installer.
-It creates an evaluable Notion experience: Refugio, Camino, Jardin, Bitacora,
-Companion selection, and the first Resource setup.
+PersonalOS v2 creates an evaluable Notion experience.
+This version adds safer test modes, avoids confusing duplicate roots,
+and improves the Education / Classroom onboarding.
 """
 
 from __future__ import annotations
@@ -22,12 +22,13 @@ from notion_client import Client
 from notion_client.errors import APIResponseError
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 
 console = Console()
 
-INSTALLER_VERSION = "2.0.0-seed"
-SCHEMA_VERSION = "2.0"
+INSTALLER_VERSION = "2.1.0-seed"
+SCHEMA_VERSION = "2.1"
+CANONICAL_REPOSITORY = "lllanos/Personal_OS"
 
 ICONS: dict[str, str] = {
     "root": "🌱",
@@ -38,6 +39,8 @@ ICONS: dict[str, str] = {
     "bitacora": "📖",
     "persona": "👤",
     "resource": "📚",
+    "educacion": "🎒",
+    "classroom": "🏫",
     "aurora": "🌸",
     "samwise": "🌿",
     "mellon": "🍃",
@@ -60,7 +63,29 @@ COMPANION_OPTIONS = {
     "2": "Samwise",
 }
 
-CLASSROOM_OPTIONS = {
+INSTALL_MODE_OPTIONS = {
+    "1": "Instalación limpia de prueba: archivar PersonalOS anteriores y crear uno nuevo",
+    "2": "Copia nueva: crear PersonalOS con nombre único sin archivar anteriores",
+    "3": "Upgrade local: mantener Notion como está y solo usar mapping local si existe",
+}
+
+LEARNING_CONTEXT_OPTIONS = {
+    "1": "Colegio primario",
+    "2": "Colegio secundario",
+    "3": "Carrera universitaria / terciaria",
+    "4": "Curso online",
+    "5": "Capacitación laboral",
+    "6": "Estudio personal",
+    "7": "Otro",
+}
+
+CLASSROOM_USAGE_OPTIONS = {
+    "1": "Sí, usa Google Classroom",
+    "2": "No usa Google Classroom",
+    "3": "No sé todavía",
+}
+
+CLASSROOM_OPEN_OPTIONS = {
     "1": "Navegador",
     "2": "Aplicación",
     "3": "Más tarde",
@@ -69,14 +94,23 @@ CLASSROOM_OPTIONS = {
 
 @dataclass
 class FirstExperience:
+    install_mode: str
     profile: str
     display_name: str
     companion: str
-    classroom_mode: str
+    learning_context: str
+    classroom_usage: str
+    classroom_open_mode: str
+    classroom_url: str | None
+    classroom_notes: str
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def timestamp_label() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M")
 
 
 def safe_icon(icon_key: str) -> str:
@@ -116,6 +150,14 @@ def paragraph(text: str) -> dict[str, Any]:
 def heading(text: str, level: int = 2) -> dict[str, Any]:
     block_type = f"heading_{level}"
     return {"object": "block", "type": block_type, block_type: {"rich_text": rt(text)}}
+
+
+def bulleted(text: str) -> dict[str, Any]:
+    return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": rt(text)}}
+
+
+def numbered(text: str) -> dict[str, Any]:
+    return {"object": "block", "type": "numbered_list_item", "numbered_list_item": {"rich_text": rt(text)}}
 
 
 def callout(text: str, icon_key: str = "refugio") -> dict[str, Any]:
@@ -164,23 +206,29 @@ def resolve_settings(config: dict[str, Any]) -> tuple[str, str]:
     return token, normalize_page_id(parent_page_id)
 
 
-def choose_from(title: str, options: dict[str, str]) -> str:
+def choose_from(title: str, options: dict[str, str], default: str = "1") -> str:
     console.print(f"\n[bold]{title}[/bold]")
     for key, value in options.items():
         console.print(f"  {key}. {value}")
-    choice = Prompt.ask("Elegí una opción", choices=list(options.keys()), default="1")
+    choice = Prompt.ask("Elegí una opción", choices=list(options.keys()), default=default)
     return options[choice]
+
+
+def ask_optional_url(prompt: str) -> str | None:
+    value = Prompt.ask(prompt, default="").strip()
+    return value or None
 
 
 def run_first_experience() -> FirstExperience:
     console.print(
         Panel(
             "Bienvenido.\n\nHoy vamos a preparar tu Refugio.\nNo hace falta resolver toda la vida hoy.\nSolo dar el primer paso.",
-            title="🍃 PersonalOS v2",
+            title="🍃 PersonalOS v2.1",
             subtitle="First Experience",
         )
     )
 
+    install_mode = choose_from("¿Cómo querés instalar esta prueba?", INSTALL_MODE_OPTIONS, default="1")
     profile = choose_from("¿Para quién estamos preparando este Refugio?", PROFILE_OPTIONS)
     display_name = Prompt.ask("\n¿Cómo querés que te llame?").strip() or "Persona"
 
@@ -188,17 +236,39 @@ def run_first_experience() -> FirstExperience:
     console.print("[dim]Aurora: presencia serena. Samwise: compañero de camino.[/dim]")
     companion = choose_from("¿Cómo preferís que te acompañe?", COMPANION_OPTIONS)
 
-    classroom_mode = choose_from("¿Cómo preferís abrir Classroom cuando haga falta?", CLASSROOM_OPTIONS)
+    learning_context = choose_from("¿Qué tipo de aprendizaje querés organizar primero?", LEARNING_CONTEXT_OPTIONS)
+    classroom_usage = choose_from("¿Este aprendizaje usa Google Classroom?", CLASSROOM_USAGE_OPTIONS)
+
+    classroom_open_mode = "Más tarde"
+    classroom_url = None
+    classroom_notes = ""
+
+    if classroom_usage == "Sí, usa Google Classroom":
+        classroom_open_mode = choose_from("¿Cómo preferís abrir Classroom cuando haga falta?", CLASSROOM_OPEN_OPTIONS)
+        classroom_url = ask_optional_url("Pegá el link de Classroom si ya lo tenés. Si no, ENTER")
+        classroom_notes = Prompt.ask(
+            "¿Qué necesitás recordar sobre este Classroom?",
+            default="Revisar materias, tareas pendientes y próximas entregas.",
+        ).strip()
+    elif classroom_usage == "No sé todavía":
+        classroom_notes = "Confirmar si la institución usa Google Classroom u otra plataforma."
+    else:
+        classroom_notes = "No usa Classroom. PersonalOS organizará este aprendizaje por materias, tareas, documentos y fechas."
 
     console.print("\n[green]Perfecto.[/green]")
     console.print("Ya tengo lo necesario. El resto lo iremos descubriendo juntos.\n")
     Prompt.ask("Mellon. Presioná ENTER para preparar tu Refugio", default="")
 
     return FirstExperience(
+        install_mode=install_mode,
         profile=profile,
         display_name=display_name,
         companion=companion,
-        classroom_mode=classroom_mode,
+        learning_context=learning_context,
+        classroom_usage=classroom_usage,
+        classroom_open_mode=classroom_open_mode,
+        classroom_url=classroom_url,
+        classroom_notes=classroom_notes,
     )
 
 
@@ -211,6 +281,7 @@ class PersonalOSV2Installer:
         self.mapping: dict[str, Any] = {
             "installer_version": INSTALLER_VERSION,
             "schema_version": SCHEMA_VERSION,
+            "repository": CANONICAL_REPOSITORY,
             "created_at": now_iso(),
             "first_experience": asdict(fx),
             "objects": {},
@@ -230,6 +301,48 @@ class PersonalOSV2Installer:
             "created_at": now_iso(),
         }
         return obj
+
+    def plain_title(self, page: dict[str, Any]) -> str:
+        title = page.get("properties", {}).get("title", {}).get("title", [])
+        return "".join(part.get("plain_text", "") for part in title).strip()
+
+    def is_direct_child_of_parent(self, page: dict[str, Any]) -> bool:
+        parent = page.get("parent", {})
+        return parent.get("type") == "page_id" and normalize_page_id(parent.get("page_id", "")) == self.parent_page_id
+
+    def archive_existing_roots(self) -> int:
+        if not self.fx.install_mode.startswith("Instalación limpia"):
+            return 0
+
+        console.print("🧹 Buscando PersonalOS anteriores bajo la página padre...")
+        archived = 0
+        try:
+            response = self.notion.search(
+                query="PersonalOS",
+                filter={"value": "page", "property": "object"},
+                page_size=50,
+            )
+        except APIResponseError as exc:
+            console.print(f"[yellow]No pude buscar páginas previas en Notion:[/yellow] {exc}")
+            return 0
+
+        for page in response.get("results", []):
+            title = self.plain_title(page)
+            if not self.is_direct_child_of_parent(page):
+                continue
+            if title == "PersonalOS" or title.startswith("PersonalOS —"):
+                try:
+                    self.notion.pages.update(page_id=page["id"], archived=True)
+                    archived += 1
+                    console.print(f"  Archivado: {title}")
+                except APIResponseError as exc:
+                    console.print(f"[yellow]No pude archivar {title}:[/yellow] {exc}")
+        return archived
+
+    def root_title(self) -> str:
+        if self.fx.install_mode.startswith("Copia nueva"):
+            return f"PersonalOS — {self.fx.display_name} — {timestamp_label()}"
+        return "PersonalOS"
 
     def create_page(self, parent_id: str, name: str, icon_key: str, children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         try:
@@ -261,9 +374,8 @@ class PersonalOSV2Installer:
         return self.notion.pages.create(parent={"database_id": database_id}, properties=properties, children=children or [])
 
     def append_blocks(self, page_id: str, blocks: list[dict[str, Any]]) -> None:
-        if not blocks:
-            return
-        self.notion.blocks.children.append(block_id=page_id, children=blocks)
+        if blocks:
+            self.notion.blocks.children.append(block_id=page_id, children=blocks)
 
     def companion_welcome(self) -> str:
         if self.fx.companion == "Samwise":
@@ -275,7 +387,18 @@ class PersonalOSV2Installer:
             return "Si el camino pesa, lo hacemos más liviano. Un paso sigue siendo camino."
         return "No hace falta resolver todo. El Refugio va a seguir acá cuando lo necesites."
 
+    def classroom_next_step(self) -> str:
+        if self.fx.classroom_usage == "Sí, usa Google Classroom":
+            return "Dejar Classroom listo: confirmar acceso, copiar link si existe y revisar próximas tareas."
+        if self.fx.classroom_usage == "No sé todavía":
+            return "Confirmar si el aprendizaje usa Classroom, campus, Drive, WhatsApp, PDFs u otra fuente."
+        return "Organizar el aprendizaje sin Classroom: materias, tareas, documentos, fechas y próxima acción."
+
     def run(self) -> None:
+        archived = self.archive_existing_roots()
+        if archived:
+            console.print(f"[green]{archived} PersonalOS anterior(es) archivado(s).[/green]")
+
         console.print("🌱 Preparando tu Refugio...")
         root = self.remember("root", self.create_root())
 
@@ -284,21 +407,22 @@ class PersonalOSV2Installer:
         persona_db = self.remember("persona_db", self.create_persona_db(jardin["id"]))
         resources_db = self.remember("resources_db", self.create_resources_db(jardin["id"]))
         companion_page = self.remember("companion", self.create_companion_page(jardin["id"]))
+        classroom_setup = self.remember("classroom_setup", self.create_classroom_setup_page(jardin["id"]))
 
         console.print("🧭 Trazando el primer Camino...")
-        camino = self.remember("camino", self.create_camino(root["id"]))
+        camino = self.remember("camino", self.create_camino(root["id"], classroom_setup["url"]))
 
         console.print("📖 Preparando la Bitácora...")
         bitacora = self.remember("bitacora", self.create_bitacora(root["id"]))
 
-        console.print("📚 Configurando Classroom como primer Recurso...")
+        console.print("📚 Configurando el primer Recurso de aprendizaje...")
         self.seed_persona(persona_db["id"])
-        self.seed_classroom(resources_db["id"])
+        self.seed_classroom(resources_db["id"], classroom_setup["url"])
 
         console.print("🍃 Abriendo el Refugio...")
-        refugio = self.remember("refugio", self.create_refugio(root["id"], camino["url"], jardin["url"], bitacora["url"]))
+        refugio = self.remember("refugio", self.create_refugio(root["id"], camino["url"], jardin["url"], bitacora["url"], classroom_setup["url"]))
 
-        self.append_root_navigation(root["id"], refugio["url"], camino["url"], jardin["url"], bitacora["url"], companion_page["url"])
+        self.append_root_navigation(root["id"], refugio["url"], camino["url"], jardin["url"], bitacora["url"], companion_page["url"], classroom_setup["url"])
         self.save_mapping()
 
         console.print("\n[green]Mellon.[/green]")
@@ -307,25 +431,28 @@ class PersonalOSV2Installer:
         console.print(f"Refugio: {refugio['url']}")
         console.print(f"Camino: {camino['url']}")
         console.print(f"Mi Jardín: {jardin['url']}")
+        console.print(f"Classroom Setup: {classroom_setup['url']}")
         console.print(f"Bitácora: {bitacora['url']}")
 
     def create_root(self) -> dict[str, Any]:
         return self.create_page(
             self.parent_page_id,
-            "PersonalOS",
+            self.root_title(),
             "root",
             [
                 heading("PersonalOS", 1),
                 paragraph("Un Refugio digital para recuperar calma, claridad y dirección."),
                 callout(self.companion_welcome(), "refugio"),
+                paragraph(f"Modo de instalación: {self.fx.install_mode}"),
                 paragraph(f"Companion elegido: {self.fx.companion}"),
                 paragraph(f"Perfil inicial: {self.fx.profile}"),
+                paragraph(f"Primer contexto de aprendizaje: {self.fx.learning_context}"),
                 divider(),
                 paragraph("Este espacio fue creado para evaluar PersonalOS v2 como experiencia viva, no como documentación técnica."),
             ],
         )
 
-    def append_root_navigation(self, root_id: str, refugio_url: str, camino_url: str, jardin_url: str, bitacora_url: str, companion_url: str) -> None:
+    def append_root_navigation(self, root_id: str, refugio_url: str, camino_url: str, jardin_url: str, bitacora_url: str, companion_url: str, classroom_setup_url: str) -> None:
         self.append_blocks(
             root_id,
             [
@@ -333,12 +460,13 @@ class PersonalOSV2Installer:
                 link_paragraph("🍃 Refugio", refugio_url),
                 link_paragraph("🧭 Camino", camino_url),
                 link_paragraph("🌿 Mi Jardín", jardin_url),
+                link_paragraph("🏫 Configurar aprendizaje / Classroom", classroom_setup_url),
                 link_paragraph("📖 Bitácora", bitacora_url),
                 link_paragraph(f"🤝 Companion: {self.fx.companion}", companion_url),
             ],
         )
 
-    def create_refugio(self, root_id: str, camino_url: str, jardin_url: str, bitacora_url: str) -> dict[str, Any]:
+    def create_refugio(self, root_id: str, camino_url: str, jardin_url: str, bitacora_url: str, classroom_setup_url: str) -> dict[str, Any]:
         return self.create_page(
             root_id,
             "Refugio",
@@ -350,7 +478,8 @@ class PersonalOSV2Installer:
                 paragraph("Hoy no hace falta ver todo. Solo el siguiente paso."),
                 link_paragraph("🧭 Ir al Camino", camino_url),
                 heading("Tu siguiente paso", 2),
-                callout("Abrir Classroom. Si todavía no está listo, PersonalOS ya preparó el recurso en Mi Jardín.", "paso"),
+                callout(self.classroom_next_step(), "paso"),
+                link_paragraph("🏫 Abrir configuración de aprendizaje / Classroom", classroom_setup_url),
                 heading("Cuando termines", 2),
                 link_paragraph("📖 Dejar una pequeña reflexión", bitacora_url),
                 heading("Cuidar el espacio", 2),
@@ -360,21 +489,19 @@ class PersonalOSV2Installer:
             ],
         )
 
-    def create_camino(self, root_id: str) -> dict[str, Any]:
-        resource_hint = "Classroom se abrirá desde navegador." if self.fx.classroom_mode == "Navegador" else "Classroom quedó preparado según tu preferencia."
-        if self.fx.classroom_mode == "Más tarde":
-            resource_hint = "Classroom quedó pendiente para configurar más tarde."
+    def create_camino(self, root_id: str, classroom_setup_url: str) -> dict[str, Any]:
         return self.create_page(
             root_id,
             "Camino",
             "camino",
             [
                 heading("Camino inicial", 1),
-                paragraph("Preparar el primer estudio."),
+                paragraph(f"Preparar el primer aprendizaje: {self.fx.learning_context}."),
                 callout("Un solo paso visible. Nada más.", "camino"),
                 heading("Paso actual", 2),
-                paragraph("Abrir Classroom."),
-                callout(resource_hint, "resource"),
+                paragraph(self.classroom_next_step()),
+                callout(self.fx.classroom_notes, "resource"),
+                link_paragraph("🏫 Configurar aprendizaje / Classroom", classroom_setup_url),
                 paragraph("Cuando termines, volvé al Refugio o dejá una reflexión en la Bitácora."),
             ],
         )
@@ -387,9 +514,39 @@ class PersonalOSV2Installer:
             [
                 heading("Mi Jardín", 1),
                 paragraph("Acá crecen las personas, recursos y preferencias del Refugio."),
-                callout("Por ahora solo necesitamos lo esencial: Persona, Companion y Classroom.", "jardin"),
+                callout("Por ahora solo necesitamos lo esencial: Persona, Companion y primer aprendizaje.", "jardin"),
             ],
         )
+
+    def create_classroom_setup_page(self, jardin_id: str) -> dict[str, Any]:
+        children = [
+            heading("Configurar aprendizaje / Classroom", 1),
+            paragraph(f"Contexto detectado: {self.fx.learning_context}"),
+            paragraph(f"Uso de Classroom: {self.fx.classroom_usage}"),
+            paragraph(f"Modo preferido: {self.fx.classroom_open_mode}"),
+            callout(self.fx.classroom_notes, "classroom"),
+            heading("Qué significa dejarlo listo", 2),
+            numbered("Confirmar dónde vive la información: Classroom, campus, Drive, WhatsApp, PDFs o apuntes."),
+            numbered("Guardar el link o referencia principal."),
+            numbered("Registrar materias, cursos o espacios de aprendizaje."),
+            numbered("Registrar la próxima tarea o entrega visible."),
+            numbered("Definir una próxima acción concreta."),
+            heading("Datos actuales", 2),
+            bulleted(f"Persona: {self.fx.display_name}"),
+            bulleted(f"Tipo de aprendizaje: {self.fx.learning_context}"),
+            bulleted(f"Classroom: {self.fx.classroom_usage}"),
+        ]
+        if self.fx.classroom_url:
+            children.append(link_paragraph("Abrir Classroom / plataforma", self.fx.classroom_url))
+        else:
+            children.append(paragraph("Link pendiente: todavía no se registró un enlace."))
+        children.extend(
+            [
+                heading("Próxima acción sugerida", 2),
+                callout(self.classroom_next_step(), "paso"),
+            ]
+        )
+        return self.create_page(jardin_id, "Configurar aprendizaje / Classroom", "classroom", children)
 
     def create_companion_page(self, jardin_id: str) -> dict[str, Any]:
         if self.fx.companion == "Samwise":
@@ -440,6 +597,7 @@ class PersonalOSV2Installer:
                 "Perfil": select_prop([("Adulto", "blue"), ("Adolescente", "green"), ("Niño", "yellow"), ("Otra persona", "gray")]),
                 "Companion": select_prop([("Aurora", "pink"), ("Samwise", "green")]),
                 "Estado": select_prop([("Activo", "green"), ("Descansando", "blue")]),
+                "Aprendizaje inicial": {"rich_text": {}},
             },
         )
 
@@ -450,9 +608,10 @@ class PersonalOSV2Installer:
             "resource",
             {
                 "Recurso": {"title": {}},
-                "Tipo": select_prop([("Educación", "blue"), ("Documento", "gray"), ("Aplicación", "green"), ("Sitio web", "purple")]),
-                "Estado": select_prop([("Descubierto", "gray"), ("Configurado", "green"), ("Más tarde", "yellow")]),
-                "Modo": select_prop([("Navegador", "blue"), ("Aplicación", "green"), ("Más tarde", "yellow")]),
+                "Tipo": select_prop([("Educación", "blue"), ("Documento", "gray"), ("Aplicación", "green"), ("Sitio web", "purple"), ("Campus", "orange")]),
+                "Estado": select_prop([("Descubierto", "gray"), ("Configurado", "green"), ("Pendiente", "yellow"), ("No aplica", "gray")]),
+                "Modo": select_prop([("Navegador", "blue"), ("Aplicación", "green"), ("Más tarde", "yellow"), ("No aplica", "gray")]),
+                "Contexto": select_prop([("Colegio primario", "yellow"), ("Colegio secundario", "green"), ("Carrera universitaria / terciaria", "blue"), ("Curso online", "purple"), ("Capacitación laboral", "orange"), ("Estudio personal", "gray"), ("Otro", "gray")]),
                 "URL": {"url": {}},
                 "Notas": {"rich_text": {}},
             },
@@ -466,24 +625,43 @@ class PersonalOSV2Installer:
                 "Perfil": {"select": {"name": self.fx.profile}},
                 "Companion": {"select": {"name": self.fx.companion}},
                 "Estado": {"select": {"name": "Activo"}},
+                "Aprendizaje inicial": rich_text_prop(self.fx.learning_context),
             },
         )
         self.remember("persona", page)
 
-    def seed_classroom(self, resources_db_id: str) -> None:
-        status = "Más tarde" if self.fx.classroom_mode == "Más tarde" else "Configurado"
-        url = "https://classroom.google.com" if self.fx.classroom_mode == "Navegador" else None
+    def seed_classroom(self, resources_db_id: str, setup_url: str) -> None:
+        if self.fx.classroom_usage == "Sí, usa Google Classroom":
+            status = "Pendiente" if self.fx.classroom_open_mode == "Más tarde" else "Configurado"
+            resource_name = "Google Classroom"
+            resource_type = "Educación"
+            mode = self.fx.classroom_open_mode
+            url = self.fx.classroom_url or "https://classroom.google.com"
+        elif self.fx.classroom_usage == "No sé todavía":
+            status = "Pendiente"
+            resource_name = "Plataforma de aprendizaje por confirmar"
+            resource_type = "Educación"
+            mode = "Más tarde"
+            url = setup_url
+        else:
+            status = "No aplica"
+            resource_name = "Aprendizaje sin Classroom"
+            resource_type = "Educación"
+            mode = "No aplica"
+            url = setup_url
+
         props: dict[str, Any] = {
-            "Recurso": title_prop("Classroom"),
-            "Tipo": {"select": {"name": "Educación"}},
+            "Recurso": title_prop(resource_name),
+            "Tipo": {"select": {"name": resource_type}},
             "Estado": {"select": {"name": status}},
-            "Modo": {"select": {"name": self.fx.classroom_mode}},
-            "Notas": rich_text_prop("Primer recurso de PersonalOS v2. Se configura una sola vez."),
+            "Modo": {"select": {"name": mode}},
+            "Contexto": {"select": {"name": self.fx.learning_context}},
+            "Notas": rich_text_prop(self.fx.classroom_notes),
         }
         if url:
             props["URL"] = {"url": url}
         page = self.create_db_item(resources_db_id, props)
-        self.remember("resource_classroom", page)
+        self.remember("resource_learning", page)
 
 
 def main() -> None:
