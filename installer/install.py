@@ -148,13 +148,18 @@ def load_config() -> dict[str, Any]:
 
 
 def resolve_settings(config: dict[str, Any]) -> tuple[str, str]:
-    token = os.getenv("NOTION_TOKEN") or config.get("notion", {}).get("token")
-    parent_page_id = os.getenv("NOTION_PARENT_PAGE_ID") or config.get("notion", {}).get("parent_page_id")
+    notion_cfg = config.get("notion", {})
+    token = os.getenv("NOTION_TOKEN") or notion_cfg.get("token")
+    parent_page_id = (
+        os.getenv("NOTION_PARENT_PAGE_ID")
+        or notion_cfg.get("parent_page_id")
+        or notion_cfg.get("parent_page")
+    )
     if not token or "REPLACE" in token:
         console.print("[red]Missing NOTION_TOKEN. Export it or set it in config.yaml.[/red]")
         sys.exit(1)
     if not parent_page_id:
-        console.print("[red]Missing NOTION_PARENT_PAGE_ID. Export it or set it in config.yaml.[/red]")
+        console.print("[red]Missing NOTION_PARENT_PAGE_ID / parent_page. Export it or set it in config.yaml.[/red]")
         sys.exit(1)
     return token, normalize_page_id(parent_page_id)
 
