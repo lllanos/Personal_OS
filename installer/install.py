@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""PersonalOS Notion Installer v2.1 Seed.
+"""PersonalOS Notion Installer v2.2 Seed.
 
-PersonalOS v2 creates an evaluable Notion experience.
-This version adds safer test modes, avoids confusing duplicate roots,
-and improves the Education / Classroom onboarding.
+Creates an evaluable Notion experience and a real clickable learning flow.
+This version fixes the dead-end next step by creating actionable pages:
+Paso 1, Paso 2 and Paso 3.
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ from notion_client import Client
 from notion_client.errors import APIResponseError
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
 
 console = Console()
 
-INSTALLER_VERSION = "2.1.0-seed"
-SCHEMA_VERSION = "2.1"
+INSTALLER_VERSION = "2.2.0-seed"
+SCHEMA_VERSION = "2.2"
 CANONICAL_REPOSITORY = "lllanos/Personal_OS"
 
 ICONS: dict[str, str] = {
@@ -223,7 +223,7 @@ def run_first_experience() -> FirstExperience:
     console.print(
         Panel(
             "Bienvenido.\n\nHoy vamos a preparar tu Refugio.\nNo hace falta resolver toda la vida hoy.\nSolo dar el primer paso.",
-            title="🍃 PersonalOS v2.1",
+            title="🍃 PersonalOS v2.2",
             subtitle="First Experience",
         )
     )
@@ -256,7 +256,7 @@ def run_first_experience() -> FirstExperience:
         classroom_notes = "No usa Classroom. PersonalOS organizará este aprendizaje por materias, tareas, documentos y fechas."
 
     console.print("\n[green]Perfecto.[/green]")
-    console.print("Ya tengo lo necesario. El resto lo iremos descubriendo juntos.\n")
+    console.print("Ya tengo lo necesario para crear un camino de aprendizaje con pasos concretos.\n")
     Prompt.ask("Mellon. Presioná ENTER para preparar tu Refugio", default="")
 
     return FirstExperience(
@@ -387,12 +387,15 @@ class PersonalOSV2Installer:
             return "Si el camino pesa, lo hacemos más liviano. Un paso sigue siendo camino."
         return "No hace falta resolver todo. El Refugio va a seguir acá cuando lo necesites."
 
+    def first_action_label(self) -> str:
+        return "Abrir Paso 1 — Confirmar fuente de aprendizaje"
+
     def classroom_next_step(self) -> str:
         if self.fx.classroom_usage == "Sí, usa Google Classroom":
-            return "Dejar Classroom listo: confirmar acceso, copiar link si existe y revisar próximas tareas."
+            return "Paso 1: confirmar acceso y fuente. Después registrar materia/curso y primera tarea."
         if self.fx.classroom_usage == "No sé todavía":
-            return "Confirmar si el aprendizaje usa Classroom, campus, Drive, WhatsApp, PDFs u otra fuente."
-        return "Organizar el aprendizaje sin Classroom: materias, tareas, documentos, fechas y próxima acción."
+            return "Paso 1: elegir la fuente real del aprendizaje: Classroom, campus, Drive, WhatsApp, PDFs u otra."
+        return "Paso 1: organizar este aprendizaje sin Classroom, desde materias/cursos, documentos, fechas y tareas."
 
     def run(self) -> None:
         archived = self.archive_existing_roots()
@@ -407,22 +410,28 @@ class PersonalOSV2Installer:
         persona_db = self.remember("persona_db", self.create_persona_db(jardin["id"]))
         resources_db = self.remember("resources_db", self.create_resources_db(jardin["id"]))
         companion_page = self.remember("companion", self.create_companion_page(jardin["id"]))
-        classroom_setup = self.remember("classroom_setup", self.create_classroom_setup_page(jardin["id"]))
+        learning_setup = self.remember("learning_setup", self.create_learning_setup_page(jardin["id"]))
+
+        console.print("👣 Creando pasos accionables de aprendizaje...")
+        step1 = self.remember("learning_step_1", self.create_learning_source_step(learning_setup["id"]))
+        step2 = self.remember("learning_step_2", self.create_learning_structure_step(learning_setup["id"]))
+        step3 = self.remember("learning_step_3", self.create_first_task_step(learning_setup["id"]))
+        self.append_learning_navigation(learning_setup["id"], step1["url"], step2["url"], step3["url"])
 
         console.print("🧭 Trazando el primer Camino...")
-        camino = self.remember("camino", self.create_camino(root["id"], classroom_setup["url"]))
+        camino = self.remember("camino", self.create_camino(root["id"], learning_setup["url"], step1["url"]))
 
         console.print("📖 Preparando la Bitácora...")
         bitacora = self.remember("bitacora", self.create_bitacora(root["id"]))
 
         console.print("📚 Configurando el primer Recurso de aprendizaje...")
         self.seed_persona(persona_db["id"])
-        self.seed_classroom(resources_db["id"], classroom_setup["url"])
+        self.seed_learning_resource(resources_db["id"], learning_setup["url"], step1["url"])
 
         console.print("🍃 Abriendo el Refugio...")
-        refugio = self.remember("refugio", self.create_refugio(root["id"], camino["url"], jardin["url"], bitacora["url"], classroom_setup["url"]))
+        refugio = self.remember("refugio", self.create_refugio(root["id"], camino["url"], jardin["url"], bitacora["url"], learning_setup["url"], step1["url"]))
 
-        self.append_root_navigation(root["id"], refugio["url"], camino["url"], jardin["url"], bitacora["url"], companion_page["url"], classroom_setup["url"])
+        self.append_root_navigation(root["id"], refugio["url"], camino["url"], jardin["url"], bitacora["url"], companion_page["url"], learning_setup["url"], step1["url"])
         self.save_mapping()
 
         console.print("\n[green]Mellon.[/green]")
@@ -431,7 +440,8 @@ class PersonalOSV2Installer:
         console.print(f"Refugio: {refugio['url']}")
         console.print(f"Camino: {camino['url']}")
         console.print(f"Mi Jardín: {jardin['url']}")
-        console.print(f"Classroom Setup: {classroom_setup['url']}")
+        console.print(f"Aprendizaje: {learning_setup['url']}")
+        console.print(f"Siguiente paso: {step1['url']}")
         console.print(f"Bitácora: {bitacora['url']}")
 
     def create_root(self) -> dict[str, Any]:
@@ -452,21 +462,22 @@ class PersonalOSV2Installer:
             ],
         )
 
-    def append_root_navigation(self, root_id: str, refugio_url: str, camino_url: str, jardin_url: str, bitacora_url: str, companion_url: str, classroom_setup_url: str) -> None:
+    def append_root_navigation(self, root_id: str, refugio_url: str, camino_url: str, jardin_url: str, bitacora_url: str, companion_url: str, learning_setup_url: str, step1_url: str) -> None:
         self.append_blocks(
             root_id,
             [
                 heading("Entrar", 2),
                 link_paragraph("🍃 Refugio", refugio_url),
                 link_paragraph("🧭 Camino", camino_url),
+                link_paragraph("👣 Siguiente paso", step1_url),
+                link_paragraph("🎒 Configurar aprendizaje", learning_setup_url),
                 link_paragraph("🌿 Mi Jardín", jardin_url),
-                link_paragraph("🏫 Configurar aprendizaje / Classroom", classroom_setup_url),
                 link_paragraph("📖 Bitácora", bitacora_url),
                 link_paragraph(f"🤝 Companion: {self.fx.companion}", companion_url),
             ],
         )
 
-    def create_refugio(self, root_id: str, camino_url: str, jardin_url: str, bitacora_url: str, classroom_setup_url: str) -> dict[str, Any]:
+    def create_refugio(self, root_id: str, camino_url: str, jardin_url: str, bitacora_url: str, learning_setup_url: str, step1_url: str) -> dict[str, Any]:
         return self.create_page(
             root_id,
             "Refugio",
@@ -479,7 +490,8 @@ class PersonalOSV2Installer:
                 link_paragraph("🧭 Ir al Camino", camino_url),
                 heading("Tu siguiente paso", 2),
                 callout(self.classroom_next_step(), "paso"),
-                link_paragraph("🏫 Abrir configuración de aprendizaje / Classroom", classroom_setup_url),
+                link_paragraph("👣 Abrir Paso 1 — Confirmar fuente de aprendizaje", step1_url),
+                link_paragraph("🎒 Ver configuración de aprendizaje", learning_setup_url),
                 heading("Cuando termines", 2),
                 link_paragraph("📖 Dejar una pequeña reflexión", bitacora_url),
                 heading("Cuidar el espacio", 2),
@@ -489,7 +501,7 @@ class PersonalOSV2Installer:
             ],
         )
 
-    def create_camino(self, root_id: str, classroom_setup_url: str) -> dict[str, Any]:
+    def create_camino(self, root_id: str, learning_setup_url: str, step1_url: str) -> dict[str, Any]:
         return self.create_page(
             root_id,
             "Camino",
@@ -501,7 +513,8 @@ class PersonalOSV2Installer:
                 heading("Paso actual", 2),
                 paragraph(self.classroom_next_step()),
                 callout(self.fx.classroom_notes, "resource"),
-                link_paragraph("🏫 Configurar aprendizaje / Classroom", classroom_setup_url),
+                link_paragraph("👣 Abrir Paso 1 — Confirmar fuente de aprendizaje", step1_url),
+                link_paragraph("🎒 Ver configuración de aprendizaje", learning_setup_url),
                 paragraph("Cuando termines, volvé al Refugio o dejá una reflexión en la Bitácora."),
             ],
         )
@@ -518,35 +531,99 @@ class PersonalOSV2Installer:
             ],
         )
 
-    def create_classroom_setup_page(self, jardin_id: str) -> dict[str, Any]:
+    def create_learning_setup_page(self, jardin_id: str) -> dict[str, Any]:
         children = [
-            heading("Configurar aprendizaje / Classroom", 1),
+            heading("Configurar aprendizaje", 1),
             paragraph(f"Contexto detectado: {self.fx.learning_context}"),
             paragraph(f"Uso de Classroom: {self.fx.classroom_usage}"),
             paragraph(f"Modo preferido: {self.fx.classroom_open_mode}"),
             callout(self.fx.classroom_notes, "classroom"),
+            heading("Camino guiado", 2),
+            paragraph("Este espacio no termina en una frase. Abajo están los pasos concretos para avanzar."),
+        ]
+        return self.create_page(jardin_id, "Configurar aprendizaje", "educacion", children)
+
+    def append_learning_navigation(self, learning_setup_id: str, step1_url: str, step2_url: str, step3_url: str) -> None:
+        blocks = [
+            heading("Pasos", 2),
+            link_paragraph("👣 Paso 1 — Confirmar fuente de aprendizaje", step1_url),
+            link_paragraph("🎒 Paso 2 — Registrar materia o curso", step2_url),
+            link_paragraph("✅ Paso 3 — Registrar primera tarea o entrega", step3_url),
+            divider(),
             heading("Qué significa dejarlo listo", 2),
             numbered("Confirmar dónde vive la información: Classroom, campus, Drive, WhatsApp, PDFs o apuntes."),
             numbered("Guardar el link o referencia principal."),
             numbered("Registrar materias, cursos o espacios de aprendizaje."),
             numbered("Registrar la próxima tarea o entrega visible."),
             numbered("Definir una próxima acción concreta."),
-            heading("Datos actuales", 2),
-            bulleted(f"Persona: {self.fx.display_name}"),
-            bulleted(f"Tipo de aprendizaje: {self.fx.learning_context}"),
-            bulleted(f"Classroom: {self.fx.classroom_usage}"),
+        ]
+        self.append_blocks(learning_setup_id, blocks)
+
+    def create_learning_source_step(self, setup_id: str) -> dict[str, Any]:
+        children = [
+            heading("Paso 1 — Confirmar fuente de aprendizaje", 1),
+            callout("Elegí dónde vive realmente la información. No importa si todavía no está perfecto.", "paso"),
+            heading("Opciones posibles", 2),
+            bulleted("Google Classroom"),
+            bulleted("Campus universitario / Moodle"),
+            bulleted("Google Drive"),
+            bulleted("WhatsApp o grupo de alumnos"),
+            bulleted("Email"),
+            bulleted("PDFs, carpeta local o apuntes físicos"),
+            heading("Resultado esperado", 2),
+            paragraph("Dejar escrita una fuente principal y, si existe, un link o referencia."),
+            heading("Después", 2),
+            paragraph("Cuando tengas la fuente principal, avanzá al Paso 2 para registrar la materia o curso."),
         ]
         if self.fx.classroom_url:
-            children.append(link_paragraph("Abrir Classroom / plataforma", self.fx.classroom_url))
-        else:
-            children.append(paragraph("Link pendiente: todavía no se registró un enlace."))
-        children.extend(
+            children.append(link_paragraph("Abrir link registrado", self.fx.classroom_url))
+        return self.create_page(setup_id, "Paso 1 — Confirmar fuente de aprendizaje", "paso", children)
+
+    def create_learning_structure_step(self, setup_id: str) -> dict[str, Any]:
+        return self.create_page(
+            setup_id,
+            "Paso 2 — Registrar materia o curso",
+            "educacion",
             [
-                heading("Próxima acción sugerida", 2),
-                callout(self.classroom_next_step(), "paso"),
-            ]
+                heading("Paso 2 — Registrar materia o curso", 1),
+                callout("Ahora convertimos la fuente en estructura mínima: materia, curso o espacio de aprendizaje.", "educacion"),
+                heading("Datos mínimos", 2),
+                bulleted("Nombre de la materia, curso o capacitación."),
+                bulleted("Persona relacionada."),
+                bulleted("Fuente o plataforma."),
+                bulleted("Link principal, si existe."),
+                bulleted("Estado: activo, pendiente o pausado."),
+                heading("Resultado esperado", 2),
+                paragraph("Que el aprendizaje ya no dependa de recordar dónde estaba cada cosa."),
+                heading("Después", 2),
+                paragraph("Avanzá al Paso 3 para registrar la primera tarea, entrega, examen o próxima acción."),
+            ],
         )
-        return self.create_page(jardin_id, "Configurar aprendizaje / Classroom", "classroom", children)
+
+    def create_first_task_step(self, setup_id: str) -> dict[str, Any]:
+        return self.create_page(
+            setup_id,
+            "Paso 3 — Registrar primera tarea o entrega",
+            "paso",
+            [
+                heading("Paso 3 — Registrar primera tarea o entrega", 1),
+                callout("Un aprendizaje empieza a funcionar cuando tiene una próxima acción visible.", "paso"),
+                heading("Cargá una primera acción", 2),
+                bulleted("Revisar plataforma."),
+                bulleted("Anotar próxima entrega."),
+                bulleted("Buscar PDF o apunte."),
+                bulleted("Preguntar al docente o compañero."),
+                bulleted("Agendar examen o fecha importante."),
+                heading("Campos mínimos", 2),
+                bulleted("Qué hay que hacer."),
+                bulleted("Para quién es."),
+                bulleted("Fecha, si existe."),
+                bulleted("Fuente o link."),
+                bulleted("Próxima acción."),
+                heading("Resultado esperado", 2),
+                paragraph("Al terminar este paso, PersonalOS ya tiene algo concreto que mostrar en Hoy / Ahora o No olvidar."),
+            ],
+        )
 
     def create_companion_page(self, jardin_id: str) -> dict[str, Any]:
         if self.fx.companion == "Samwise":
@@ -630,7 +707,7 @@ class PersonalOSV2Installer:
         )
         self.remember("persona", page)
 
-    def seed_classroom(self, resources_db_id: str, setup_url: str) -> None:
+    def seed_learning_resource(self, resources_db_id: str, setup_url: str, step1_url: str) -> None:
         if self.fx.classroom_usage == "Sí, usa Google Classroom":
             status = "Pendiente" if self.fx.classroom_open_mode == "Más tarde" else "Configurado"
             resource_name = "Google Classroom"
@@ -639,10 +716,10 @@ class PersonalOSV2Installer:
             url = self.fx.classroom_url or "https://classroom.google.com"
         elif self.fx.classroom_usage == "No sé todavía":
             status = "Pendiente"
-            resource_name = "Plataforma de aprendizaje por confirmar"
+            resource_name = "Fuente de aprendizaje por confirmar"
             resource_type = "Educación"
             mode = "Más tarde"
-            url = setup_url
+            url = step1_url
         else:
             status = "No aplica"
             resource_name = "Aprendizaje sin Classroom"
