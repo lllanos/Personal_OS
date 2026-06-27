@@ -16,3 +16,6 @@ Thumbs.db
 
 # Logs
 *.log
+**/.personalos/
+**/*.upgrade-*
+**/upgrade_report_*.md
